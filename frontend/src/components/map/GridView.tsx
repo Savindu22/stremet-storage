@@ -62,7 +62,10 @@ export function GridView({ racks }: GridViewProps) {
           onClick={() => setExpandedCellId((current) => (current === cell.id ? null : cell.id))}
           sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
         >
-          <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
+          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
+          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
+            {cell.current_count}/{cell.capacity}
+          </Typography>
         </Box>
         <Collapse in={expanded}>
           <Stack spacing={0.5} mt={1}>

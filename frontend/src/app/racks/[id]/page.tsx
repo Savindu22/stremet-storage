@@ -92,9 +92,9 @@ export default function RackDetailPage() {
         <Stack direction="row" spacing={3} flexWrap="wrap" mb={1.5}>
           <Typography variant="body2" fontWeight={600}>{rack.row_count} levels</Typography>
           <Typography variant="body2" fontWeight={600}>{rack.column_count} columns</Typography>
-          <Typography variant="body2" color="text.secondary">{rack.occupancy_used.toFixed(1)} / {rack.occupancy_total.toFixed(1)} m³ total volume used</Typography>
+          <Typography variant="body2" color="text.secondary">{rack.occupancy_used} / {rack.occupancy_total} capacity used</Typography>
         </Stack>
-        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Standard Volumetric Utilization" />
+        <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} label="Rack occupancy" />
       </Paper>
 
       <Paper variant="outlined">
@@ -113,12 +113,14 @@ export default function RackDetailPage() {
                 <TableRow key={row.rowNumber}>
                   <TableCell sx={{ fontWeight: 600, bgcolor: 'grey.50' }}>Lvl {row.rowNumber}</TableCell>
                   {row.cells.map((cell) => {
+                    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
+
                     return (
                       <TableCell key={cell.id} sx={{ verticalAlign: 'top', p: 1 }}>
-                        <Box sx={{ border: 1, borderColor: 'divider', p: 1, borderRadius: 1, minHeight: 80 }}>
-                          <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
-                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
-                            {cell.current_volume_m3.toFixed(2)} m³ occupied
+                        <Box sx={{ border: 1, borderColor: palette.border, bgcolor: palette.fill, p: 1, borderRadius: 1, minHeight: 80 }}>
+                          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
+                            {cell.current_count}/{cell.capacity}
                           </Typography>
                           <Stack spacing={0.25} mt={1}>
                             {cell.items.map((item) => (
