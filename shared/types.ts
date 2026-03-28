@@ -9,6 +9,8 @@ export type ItemType = 'customer_order' | 'general_stock';
 
 export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 
+export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bending' | 'bending';
+
 // --- Database Entities ---
 
 export interface Zone {
@@ -94,6 +96,29 @@ export interface ActivityLog {
   created_at: string;
 }
 
+export interface Machine {
+  id: string;
+  name: string;
+  code: string;
+  category: MachineCategory;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MachineAssignment {
+  id: string;
+  item_id: string;
+  machine_id: string;
+  quantity: number;
+  assigned_at: string;
+  assigned_by: string;
+  removed_at: string | null;
+  removed_by: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 // --- API Response Wrappers ---
 
 export interface ApiResponse<T> {
@@ -153,8 +178,25 @@ export interface ItemWithLocation extends Item {
   } | null;
 }
 
+export interface MachineLocation {
+  assignment_id: string;
+  machine_id: string;
+  machine_code: string;
+  machine_name: string;
+  machine_category: MachineCategory;
+  quantity: number;
+  assigned_at: string;
+  assigned_by: string;
+}
+
 export interface ItemDetail extends ItemWithLocation {
+  machine_locations: MachineLocation[];
   activity_history: ActivityLog[];
+}
+
+export interface MachineWithItemCount extends Machine {
+  active_items: number;
+  total_quantity: number;
 }
 
 export interface ActivityLogWithItem extends ActivityLog {
@@ -213,7 +255,9 @@ export interface CheckOutRequest {
 
 export interface MoveRequest {
   assignment_id: string;
-  to_shelf_slot_id: string;
+  source_type: 'shelf' | 'machine';
+  to_shelf_slot_id?: string;
+  to_machine_id?: string;
   performed_by: string;
   notes?: string;
   quantity?: number;

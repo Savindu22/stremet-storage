@@ -1,7 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button } from '@/components/ui/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import MuiButton from '@mui/material/Button';
 
 type ModalProps = {
   open: boolean;
@@ -14,24 +18,18 @@ type ModalProps = {
 };
 
 export function Modal({ open, title, children, confirmLabel, cancelLabel = 'Cancel', onConfirm, onClose }: ModalProps) {
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(33,41,49,0.36)] p-3">
-      <div className="w-full max-w-2xl border border-app-border bg-app-panel shadow-[0_12px_30px_rgba(31,41,51,0.16)]">
-        <div className="border-b border-app-border bg-app-toolbar px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-app-text">{title}</h2>
-        </div>
-        <div className="px-4 py-3">{children}</div>
-        <div className="flex justify-end gap-2 border-t border-app-border bg-app-toolbar px-4 py-2.5">
-          <Button variant="secondary" onClick={onClose}>
-            {cancelLabel}
-          </Button>
-          {onConfirm ? <Button onClick={onConfirm}>{confirmLabel || 'Confirm'}</Button> : null}
-        </div>
-      </div>
-    </div>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent dividers>{children}</DialogContent>
+      <DialogActions>
+        <MuiButton onClick={onClose}>{cancelLabel}</MuiButton>
+        {onConfirm ? (
+          <MuiButton variant="contained" onClick={onConfirm}>
+            {confirmLabel || 'Confirm'}
+          </MuiButton>
+        ) : null}
+      </DialogActions>
+    </Dialog>
   );
 }

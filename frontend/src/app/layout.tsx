@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { HomeGridOnly } from '@/components/ui/HomeGridOnly';
 import { NavLink } from '@/components/ui/NavLink';
 import { ToastProvider } from '@/components/ui/Toast';
+import ThemeRegistry from '@/components/ThemeRegistry';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,33 +20,36 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <ToastProvider>
-          <HomeGridOnly />
-          <div className="min-h-screen bg-app-background">
-            <header className="border-b border-app-border bg-app-headerBg text-app-headerText shadow-panel">
-              <div className="page-shell flex flex-wrap items-center gap-2 py-1.5">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center border border-white/15 bg-app-primary text-[11px] font-semibold text-white shadow-[inset_1px_1px_0_rgba(255,255,255,0.2)]">
-                    ST
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold tracking-[0.01em] text-app-headerText">Stremet Storage</div>
-                    <div className="truncate text-[11px] text-slate-300">stock, check-in, check-out, movement ledger</div>
-                  </div>
+        <ThemeRegistry>
+          <ToastProvider>
+            <HomeGridOnly />
+            <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
+              <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
+                <div className="page-shell" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingBlock: 6 }}>
+                  <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 2, background: '#1565C0', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>
+                      ST
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Stremet Storage</div>
+                      <div style={{ fontSize: 10, opacity: 0.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Warehouse management</div>
+                    </div>
+                  </Link>
+                  <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                    <NavLink href="/" label="Storage grid" />
+                    <NavLink href="/items" label="Items" />
+                    <NavLink href="/check-in" label="Check in" />
+                    <NavLink href="/machines" label="Machines" />
+                    <NavLink href="/activity" label="Activity" />
+                  </nav>
                 </div>
-                <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto border-t border-white/10 pt-1.5 sm:order-2 sm:w-auto sm:flex-1 sm:justify-center sm:border-t-0 sm:pt-0">
-                  <NavLink href="/" label="Storage grid" />
-                  <NavLink href="/items" label="Items" />
-                  <NavLink href="/check-in" label="Check in" />
-                  <NavLink href="/activity" label="Activity" />
-                </nav>
-              </div>
-            </header>
-            <main className="page-shell py-2.5">
-              {children}
-            </main>
-          </div>
-        </ToastProvider>
+              </header>
+              <main className="page-shell" style={{ paddingBlock: 20 }}>
+                {children}
+              </main>
+            </div>
+          </ToastProvider>
+        </ThemeRegistry>
       </body>
     </html>
   );

@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import type { ItemDetail } from '@shared/types';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Grid from '@mui/material/Grid';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
@@ -10,6 +16,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge } from '@/components/ui/LocationBadge';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
+import type { ItemDetail } from '@shared/types';
 
 export default function CheckOutPage() {
   const params = useParams<{ id: string }>();
@@ -23,13 +30,10 @@ export default function CheckOutPage() {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    if (!params.id) {
-      return;
-    }
-
+    if (!params.id) return;
     void api
       .getItem(params.id)
-      .then((response) => setItem(response.data))
+      .then((r) => setItem(r.data))
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -38,7 +42,6 @@ export default function CheckOutPage() {
       showToast('Worker name is required', 'error');
       return;
     }
-
     setSubmitting(true);
     try {
       const response = await api.checkOutItem({
@@ -58,10 +61,10 @@ export default function CheckOutPage() {
 
   if (loading) {
     return (
-      <div className="app-frame-soft flex items-center gap-2 px-3 py-3">
+      <Paper variant="outlined" sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <LoadingSpinner />
-        <span className="text-[13px] text-app-textMuted">Loading item...</span>
-      </div>
+        <Typography variant="body2" color="text.secondary">Loading item...</Typography>
+      </Paper>
     );
   }
 
@@ -70,40 +73,53 @@ export default function CheckOutPage() {
   }
 
   return (
-    <div className="space-y-2.5">
-      <section className="app-frame flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-        <div className="min-w-0 space-y-1">
-          <h1 className="app-page-title">Check out item</h1>
-          <div className="flex flex-wrap items-center gap-3 text-[13px] text-app-textMuted">
-            <span className="font-data text-app-text">{item.item_code}</span>
-            <span>{item.name}</span>
-          </div>
-        </div>
-        <LocationBadge location={item.current_location} />
-      </section>
+    <Stack spacing={2.5}>
+      <Typography variant="h3">Check out</Typography>
 
-      <section className="app-frame px-3 py-3">
-        <div className="app-panel-grid md:grid-cols-2">
-          <div className="px-3 py-2.5">
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Worker name</div>
-            <div className="mt-2">
-              <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
-            </div>
-          </div>
-          <div className="px-3 py-2.5">
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Notes</div>
-            <textarea className="app-textarea mt-2 w-full" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Shipped to customer, moved to production, quality hold, etc." />
-          </div>
-        </div>
+      <Card>
+        <CardContent>
+          <Typography variant="subtitle1" gutterBottom>Item</Typography>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="caption" color="text.secondary">Item</Typography>
+              <Typography variant="body2" fontFamily="monospace" mt={0.25}>{item.item_code} - {item.name}</Typography>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="caption" color="text.secondary">Current location</Typography>
+              <div style={{ marginTop: 4 }}><LocationBadge location={item.current_location} /></div>
+            </Grid>
+          </Grid>
 
-        <div className="mt-3 flex justify-end">
-          <Button variant="danger" onClick={() => void handleSubmit()} disabled={submitting}>
-            {submitting ? 'Checking out...' : 'Confirm check-out'}
-          </Button>
-        </div>
-      </section>
+          <Grid container spacing={2} mt={2}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Input label="Worker name" value={workerName} onChange={(e: any) => setWorkerName(e.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                label="Notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                multiline
+                minRows={2}
+                fullWidth
+                placeholder="Shipped to customer, moved to production, etc."
+              />
+            </Grid>
+          </Grid>
 
-      {successMessage ? <div className="app-frame-soft px-3 py-2 text-[13px] text-app-success">{successMessage}</div> : null}
-    </div>
+          <Stack direction="row" justifyContent="flex-end" mt={3}>
+            <Button variant="danger" onClick={() => void handleSubmit()} disabled={submitting}>
+              {submitting ? 'Checking out...' : 'Confirm check-out'}
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {successMessage ? (
+        <Paper variant="outlined" sx={{ p: 2, bgcolor: '#e8f5e9', borderColor: '#4caf50' }}>
+          <Typography variant="body2" fontFamily="monospace" color="success.main">{successMessage}</Typography>
+        </Paper>
+      ) : null}
+    </Stack>
   );
 }

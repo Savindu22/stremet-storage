@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
+import SearchIcon from '@mui/icons-material/Search';
 import { useDebouncedValue } from '@/lib/hooks';
 
 type SearchBarProps = {
@@ -18,22 +21,25 @@ export function SearchBar({ placeholder = 'Search', value = '', onChange }: Sear
   }, [value]);
 
   useEffect(() => {
-    if (debouncedValue === value) {
-      return;
-    }
-
+    if (debouncedValue === value) return;
     onChange(debouncedValue);
   }, [debouncedValue, onChange, value]);
 
   return (
-    <label className="app-frame-soft flex min-h-9 items-center gap-2 px-3 py-1.5 focus-within:border-app-primary">
-      <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Search</span>
-      <input
-        className="w-full border-0 bg-transparent text-[13px] text-app-text outline-none placeholder:text-slate-400"
-        placeholder={placeholder}
-        value={localValue}
-        onChange={(event) => setLocalValue(event.target.value)}
-      />
-    </label>
+    <TextField
+      fullWidth
+      placeholder={placeholder}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      slotProps={{
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon fontSize="small" color="action" />
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
   );
 }

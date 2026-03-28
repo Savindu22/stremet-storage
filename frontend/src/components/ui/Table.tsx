@@ -1,7 +1,14 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import MuiTable from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import TableSortLabel from '@mui/material/TableSortLabel';
+import Paper from '@mui/material/Paper';
 
 export type TableColumn<T> = {
   key: string;
@@ -23,44 +30,38 @@ type TableProps<T> = {
 
 export function Table<T>({ columns, data, sortBy, sortOrder, onSort, rowKey, onRowClick }: TableProps<T>) {
   return (
-    <div className="app-frame overflow-x-auto">
-      <table className="min-w-full border-collapse text-sm">
-        <thead>
-          <tr className="bg-[linear-gradient(180deg,#5d6b7b_0%,#4a5665_100%)] text-left text-xs text-app-navText">
-            {columns.map((column) => (
-              <th key={column.key} className={cn('border-b border-[#47525d] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.05em]', column.className)}>
-                {column.sortable && onSort ? (
-                  <button className="inline-flex items-center gap-1 text-left hover:text-white" onClick={() => onSort(column.key)} type="button">
-                    {column.header}
-                    <span className="text-[#d4dde4]">{sortBy === column.key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ' ◆'}</span>
-                  </button>
+    <TableContainer component={Paper} variant="outlined">
+      <MuiTable size="small">
+        <TableHead>
+          <TableRow sx={{ bgcolor: 'grey.50' }}>
+            {columns.map((col) => (
+              <TableCell key={col.key}>
+                {col.sortable && onSort ? (
+                  <TableSortLabel active={sortBy === col.key} direction={sortBy === col.key ? sortOrder : 'asc'} onClick={() => onSort(col.key)}>
+                    {col.header}
+                  </TableSortLabel>
                 ) : (
-                  column.header
+                  col.header
                 )}
-              </th>
+              </TableCell>
             ))}
-          </tr>
-        </thead>
-        <tbody className="bg-app-panel">
-          {data.map((row, index) => (
-            <tr
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow
               key={rowKey(row)}
-              className={cn(
-                'border-b border-app-borderLight last:border-b-0',
-                index % 2 === 1 && 'bg-[#f2f5f8]',
-                onRowClick && 'cursor-pointer hover:bg-[#e1ecf5]',
-              )}
+              hover={Boolean(onRowClick)}
               onClick={() => onRowClick?.(row)}
+              sx={onRowClick ? { cursor: 'pointer' } : undefined}
             >
-              {columns.map((column) => (
-                <td key={column.key} className={cn('px-3 py-2.5 align-top text-app-text', column.className)}>
-                  {column.render(row)}
-                </td>
+              {columns.map((col) => (
+                <TableCell key={col.key}>{col.render(row)}</TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </MuiTable>
+    </TableContainer>
   );
 }

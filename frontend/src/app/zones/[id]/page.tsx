@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Grid from '@mui/material/Grid';
+import MuiButton from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { getZoneMapData } from '../../../components/map/api';
@@ -20,98 +26,81 @@ export default function ZoneDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!params.id) {
-      return;
-    }
-
+    if (!params.id) return;
     let active = true;
     setLoaded(false);
     setError(null);
-
     void getZoneMapData(params.id)
-      .then((result) => {
-        if (!active) {
-          return;
-        }
-
-        setZone(result);
-        setSelectedRack(result.racks[0] ?? null);
-        setLoaded(true);
-      })
-      .catch((err: Error) => {
-        if (active) {
-          setError(err.message);
-          setZone(null);
-          setLoaded(true);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+      .then((result) => { if (!active) return; setZone(result); setSelectedRack(result.racks[0] ?? null); setLoaded(true); })
+      .catch((err: Error) => { if (active) { setError(err.message); setZone(null); setLoaded(true); } });
+    return () => { active = false; };
   }, [params.id]);
 
   if (!loaded) {
     return (
-      <div className="flex items-center gap-3 border border-app-border bg-white p-6">
+      <Paper variant="outlined" sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <LoadingSpinner />
-        <span className="text-sm text-app-textMuted">Loading zone</span>
-      </div>
+        <Typography variant="body2" color="text.secondary">Loading zone</Typography>
+      </Paper>
     );
   }
 
-  if (!zone) {
-    return <EmptyState title="Unable to load zone" description={error || 'Zone not found.'} />;
-  }
+  if (!zone) return <EmptyState title="Unable to load zone" description={error || 'Zone not found.'} />;
 
   return (
-    <div className="space-y-6 py-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-app-text">{zone.name}</h1>
-          <p className="max-w-3xl text-sm text-app-textMuted">{zone.description}</p>
+    <Stack spacing={3}>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'flex-start' }} spacing={2}>
+        <div>
+          <Typography variant="h2">{zone.name}</Typography>
+          <Typography variant="body2" color="text.secondary" maxWidth={600} mt={0.5}>{zone.description}</Typography>
         </div>
-        <Link href={`/check-in?zone=${encodeURIComponent(zone.id)}`} className="inline-flex min-h-11 items-center justify-center border border-app-primary bg-app-primary px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        <MuiButton component={Link} href={`/check-in?zone=${encodeURIComponent(zone.id)}`} variant="contained">
           Check in to this zone
-        </Link>
-      </div>
+        </MuiButton>
+      </Stack>
 
-      <section className="grid gap-3 border border-app-border bg-white p-5">
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-app-text">
-          <span>{zone.rack_count} racks</span>
-          <span>{zone.total_items} items stored</span>
-          <span>{zone.occupied_slots}/{zone.total_slots} slots occupied</span>
-        </div>
-        <OccupancyBar used={zone.occupied_slots} total={zone.total_slots} />
-      </section>
+      <Card>
+        <CardContent>
+          <Stack direction="row" spacing={3} flexWrap="wrap" mb={1.5}>
+            <Typography variant="body2">{zone.rack_count} racks</Typography>
+            <Typography variant="body2">{zone.total_items} items stored</Typography>
+            <Typography variant="body2">{zone.occupied_slots}/{zone.total_slots} slots occupied</Typography>
+          </Stack>
+          <OccupancyBar used={zone.occupied_slots} total={zone.total_slots} />
+        </CardContent>
+      </Card>
 
-      <section className="grid gap-4 border border-app-border bg-white p-5">
-        <div className="space-y-2">
-          <strong className="text-app-text">Rack layout</strong>
-          <p className="text-sm text-app-textMuted">Select a rack to inspect its shelves and active items.</p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {zone.racks.map((rack) => (
-            <RackBox key={rack.id} rack={rack} onSelect={setSelectedRack} />
-          ))}
-        </div>
-      </section>
+      <Card>
+        <CardContent>
+          <Typography variant="subtitle1" mb={0.5}>Rack layout</Typography>
+          <Typography variant="body2" color="text.secondary" mb={2}>Select a rack to inspect shelves and items.</Typography>
+          <Grid container spacing={2}>
+            {zone.racks.map((rack) => (
+              <Grid size={{ xs: 6, md: 4, xl: 2.4 }} key={rack.id}>
+                <RackBox rack={rack} onSelect={setSelectedRack} />
+              </Grid>
+            ))}
+          </Grid>
+        </CardContent>
+      </Card>
 
       {selectedRack ? (
-        <section className="grid gap-3 border border-app-border bg-white p-5">
-          <div className="flex flex-wrap justify-between gap-3">
-            <strong className="text-app-text">{selectedRack.code}</strong>
-            <Link href={`/check-in?rack=${encodeURIComponent(selectedRack.id)}`} className="text-sm text-app-primary hover:underline">
-              Check in to this rack
-            </Link>
-          </div>
-          <div className="grid gap-3">
-            {[...selectedRack.shelves].sort((a, b) => b.shelf_number - a.shelf_number).map((shelf) => (
-              <ShelfRow key={shelf.id} shelf={shelf} />
-            ))}
-          </div>
-        </section>
+        <Card>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+              <Typography variant="subtitle1">{selectedRack.code}</Typography>
+              <MuiButton component={Link} href={`/check-in?rack=${encodeURIComponent(selectedRack.id)}`} size="small">
+                Check in to this rack
+              </MuiButton>
+            </Stack>
+            <Stack spacing={1.5}>
+              {[...selectedRack.shelves].sort((a, b) => b.shelf_number - a.shelf_number).map((shelf) => (
+                <ShelfRow key={shelf.id} shelf={shelf} />
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
       ) : null}
-    </div>
+    </Stack>
   );
 }

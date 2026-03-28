@@ -56,6 +56,21 @@ export function buildQueryString(params: object) {
   return query.toString();
 }
 
+export function machineLabel(code: string, name?: string) {
+  return name ? `${code} — ${name}` : code;
+}
+
+export function machineCategoryLabel(category: string) {
+  const labels: Record<string, string> = {
+    sheet_metal: 'Sheet metal',
+    cutting: 'Cutting',
+    laser: 'Laser',
+    robot_bending: 'Robot bending',
+    bending: 'Bending',
+  };
+  return labels[category] || category;
+}
+
 export function toTitleCase(value: string) {
   return value.replace(/_/g, ' ');
 }

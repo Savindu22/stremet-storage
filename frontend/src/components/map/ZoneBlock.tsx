@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-
-import { cn } from '@/lib/utils';
+import Box from '@mui/material/Box';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import type { MapRack, MapZone } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { RackBox } from './RackBox';
@@ -21,47 +23,48 @@ export function ZoneBlock({ zone, expanded, searchQuery = '', onToggle, onRackSe
   const highlight = zoneHasSearchMatch(zone, searchQuery);
 
   return (
-    <div
+    <Box
       title={`${zone.name} | ${zone.rack_count} racks | ${zone.total_items} items | ${getZoneOccupancyPercent(zone)}% occupied`}
-      style={{
+      sx={{
         position: 'absolute',
         left: `${zone.position_x}%`,
         top: `${zone.position_y}%`,
         width: `${zone.width}%`,
         height: `${zone.height}%`,
-        borderColor: highlight ? '#2563EB' : palette.border,
-        background: highlight ? '#DBEAFE' : palette.fill,
+        border: 2,
+        borderColor: highlight ? 'primary.main' : palette.border,
+        bgcolor: highlight ? '#DBEAFE' : palette.fill,
+        borderRadius: 1,
+        p: 1.5,
+        display: 'grid',
+        alignContent: 'start',
+        gap: 1,
+        overflow: 'auto',
       }}
-      className="grid content-start gap-2 border-2 p-3 shadow-sm"
     >
-      <button
-        type="button"
-        onClick={() => onToggle(zone.id)}
-        className="grid gap-2 text-left text-app-text"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="grid gap-0.5">
-            <strong className="text-sm">{zone.name}</strong>
-            <span className="text-xs text-app-textMuted">{zone.code}</span>
-          </div>
-          <span className="text-xs font-medium" style={{ color: palette.accent }}>{zone.occupied_slots}/{zone.total_slots} slots used</span>
-        </div>
+      <Box onClick={() => onToggle(zone.id)} sx={{ cursor: 'pointer' }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={1}>
+          <Box>
+            <Typography variant="subtitle2" fontWeight={600}>{zone.name}</Typography>
+            <Typography variant="caption" color="text.secondary">{zone.code}</Typography>
+          </Box>
+          <Typography variant="caption" fontWeight={500} sx={{ color: palette.accent }}>{zone.occupied_slots}/{zone.total_slots} slots</Typography>
+        </Stack>
         <OccupancyBar used={zone.occupied_slots} total={zone.total_slots} compact />
-      </button>
-      <div className="flex flex-wrap justify-between gap-3 text-xs text-app-textMuted">
-        <span>{zone.rack_count} racks</span>
-        <span>{zone.total_items} items</span>
-        <Link href={`/zones/${zone.id}`} className="text-app-primary hover:underline">
-          Open zone
-        </Link>
-      </div>
+      </Box>
+      <Stack direction="row" justifyContent="space-between" flexWrap="wrap" gap={1}>
+        <Typography variant="caption" color="text.secondary">{zone.rack_count} racks · {zone.total_items} items</Typography>
+        <Link href={`/zones/${zone.id}`} style={{ fontSize: 12, color: '#1565C0' }}>Open zone</Link>
+      </Stack>
       {expanded ? (
-        <div className={cn('grid gap-2', zone.racks.length > 2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1')}>
+        <Grid container spacing={1}>
           {zone.racks.map((rack) => (
-            <RackBox key={rack.id} rack={rack} searchQuery={searchQuery} onSelect={onRackSelect} />
+            <Grid size={{ xs: 12, xl: zone.racks.length > 2 ? 6 : 12 }} key={rack.id}>
+              <RackBox rack={rack} searchQuery={searchQuery} onSelect={onRackSelect} />
+            </Grid>
           ))}
-        </div>
+        </Grid>
       ) : null}
-    </div>
+    </Box>
   );
 }

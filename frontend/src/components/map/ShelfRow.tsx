@@ -1,6 +1,11 @@
 import Link from 'next/link';
-
-import { cn } from '@/lib/utils';
+import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import MuiButton from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import type { MapShelf } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { shelfHasSearchMatch } from './utils';
@@ -15,47 +20,44 @@ export function ShelfRow({ shelf, searchQuery = '' }: ShelfRowProps) {
   const hasSpace = shelf.current_count < shelf.capacity;
 
   return (
-    <div className={cn('grid gap-3 border p-3', highlight ? 'border-app-primary bg-blue-50' : 'border-app-border bg-white')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <strong className="text-sm text-app-text">Shelf {shelf.shelf_number}</strong>
+    <Paper variant="outlined" sx={{ p: 2, borderColor: highlight ? 'primary.main' : 'divider', bgcolor: highlight ? 'primary.50' : 'background.paper' }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+        <Typography variant="subtitle2">Shelf {shelf.shelf_number}</Typography>
         {hasSpace ? (
-          <Link
-            href={shelf.checkin_href}
-            className="inline-flex min-h-9 items-center justify-center border border-app-border bg-white px-3 py-1 text-xs font-medium text-app-text hover:bg-app-panelMuted"
-          >
+          <MuiButton component={Link} href={shelf.checkin_href} size="small" variant="outlined">
             Check in here
-          </Link>
+          </MuiButton>
         ) : (
-          <span className="text-xs font-medium text-app-danger">FULL</span>
+          <Chip label="FULL" size="small" color="error" />
         )}
-      </div>
-      <div className="grid gap-1">
-        <OccupancyBar used={shelf.current_count} total={shelf.capacity} compact />
-        <span className="text-xs text-app-textMuted">Capacity {shelf.current_count}/{shelf.capacity}</span>
-      </div>
+      </Stack>
+
+      <OccupancyBar used={shelf.current_count} total={shelf.capacity} compact />
+      <Typography variant="caption" color="text.secondary" mt={0.5} display="block">
+        Capacity {shelf.current_count}/{shelf.capacity}
+      </Typography>
+
       {shelf.items.length === 0 ? (
-        <span className="text-sm text-app-textMuted">No active items on this shelf.</span>
+        <Typography variant="body2" color="text.secondary" mt={1}>No active items on this shelf.</Typography>
       ) : (
-        <div className="grid gap-2">
+        <Stack spacing={1} mt={1.5} divider={<Divider />}>
           {shelf.items.map((item) => (
-            <div key={item.id} className="grid gap-1 border-t border-app-border pt-2 text-sm text-app-text">
-              <div className="flex flex-wrap justify-between gap-3">
-                <Link href={item.item_href} className="font-medium hover:text-app-primary">
+            <Box key={item.id}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Link href={item.item_href} style={{ fontWeight: 500, color: '#1565C0', fontSize: 14 }}>
                   {item.item_code}
                 </Link>
-                <span>{item.quantity} units</span>
-              </div>
-              <span>{item.name}</span>
-              <div className="flex flex-wrap justify-between gap-3 text-sm text-app-textMuted">
-                <span>{item.customer_name ?? 'General stock'}</span>
-                <Link href={item.checkout_href} className="text-app-primary hover:underline">
-                  Check out
-                </Link>
-              </div>
-            </div>
+                <Typography variant="caption">{item.quantity} units</Typography>
+              </Stack>
+              <Typography variant="body2">{item.name}</Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>
+                <MuiButton component={Link} href={item.checkout_href} size="small" color="error">Check out</MuiButton>
+              </Stack>
+            </Box>
           ))}
-        </div>
+        </Stack>
       )}
-    </div>
+    </Paper>
   );
 }

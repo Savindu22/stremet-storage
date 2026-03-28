@@ -1,6 +1,9 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import GridViewIcon from '@mui/icons-material/GridView';
+import MapIcon from '@mui/icons-material/Map';
 
 interface MapToggleProps {
   value: 'floor' | 'grid';
@@ -8,30 +11,15 @@ interface MapToggleProps {
 }
 
 export function MapToggle({ value, onChange }: MapToggleProps) {
-  const options = [
-    { key: 'floor' as const, label: 'Floor plan' },
-    { key: 'grid' as const, label: 'Grid view' },
-  ];
-
   return (
-    <div className="inline-flex border border-app-border bg-white">
-      {options.map((option) => {
-        const active = option.key === value;
-        return (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => onChange(option.key)}
-            className={cn(
-              'min-h-11 px-4 text-sm font-medium transition-colors',
-              option.key === 'floor' && 'border-r border-app-border',
-              active ? 'bg-app-primary text-white' : 'bg-white text-app-text hover:bg-app-panelMuted',
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+    <ToggleButtonGroup
+      value={value}
+      exclusive
+      onChange={(_, v) => { if (v) onChange(v); }}
+      size="small"
+    >
+      <ToggleButton value="floor"><MapIcon sx={{ mr: 0.5, fontSize: 18 }} /> Floor plan</ToggleButton>
+      <ToggleButton value="grid"><GridViewIcon sx={{ mr: 0.5, fontSize: 18 }} /> Grid view</ToggleButton>
+    </ToggleButtonGroup>
   );
 }

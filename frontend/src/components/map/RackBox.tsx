@@ -1,6 +1,9 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import type { MapRack } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { rackHasSearchMatch } from './utils';
@@ -15,28 +18,30 @@ export function RackBox({ rack, searchQuery = '', onSelect }: RackBoxProps) {
   const highlight = rackHasSearchMatch(rack, searchQuery);
 
   return (
-    <button
-      type="button"
+    <Paper
+      variant="outlined"
       onClick={() => onSelect?.(rack)}
-      className={cn(
-        'grid min-w-[140px] gap-2 border p-3 text-left transition-colors',
-        onSelect ? 'cursor-pointer hover:bg-slate-50' : 'cursor-default',
-        highlight ? 'border-app-primary bg-blue-50' : 'border-app-border bg-white',
-      )}
+      sx={{
+        p: 1.5,
+        cursor: onSelect ? 'pointer' : 'default',
+        borderColor: highlight ? 'primary.main' : 'divider',
+        bgcolor: highlight ? 'primary.50' : 'background.paper',
+        '&:hover': onSelect ? { bgcolor: 'grey.50' } : undefined,
+      }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <strong className="text-sm text-app-text">{rack.code}</strong>
-        <span className="text-xs text-app-textMuted">{rack.label}</span>
-      </div>
-      <div className="grid gap-1.5">
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+        <Typography variant="subtitle2" fontWeight={600}>{rack.code}</Typography>
+        <Typography variant="caption" color="text.secondary">{rack.label}</Typography>
+      </Stack>
+      <Stack spacing={0.5} mb={1}>
         {[...rack.shelves].sort((a, b) => b.shelf_number - a.shelf_number).map((shelf) => (
-          <div key={shelf.id} className="flex justify-between gap-2 border border-app-border bg-app-background px-2 py-1 text-xs text-app-text">
+          <Box key={shelf.id} sx={{ display: 'flex', justifyContent: 'space-between', px: 1, py: 0.25, bgcolor: 'grey.100', borderRadius: 0.5, fontSize: 12 }}>
             <span>S{shelf.shelf_number}</span>
             <span>{shelf.current_count}/{shelf.capacity}</span>
-          </div>
+          </Box>
         ))}
-      </div>
+      </Stack>
       <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} compact />
-    </button>
+    </Paper>
   );
 }

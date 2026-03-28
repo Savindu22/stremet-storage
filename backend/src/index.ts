@@ -8,6 +8,7 @@ import { activityRouter } from './routes/activity';
 import { searchRouter } from './routes/search';
 import { statsRouter } from './routes/stats';
 import { customersRouter } from './routes/customers';
+import { machinesRouter } from './routes/machines';
 import { errorHandler } from './middleware/errorHandler';
 
 dotenv.config();
@@ -34,6 +35,7 @@ app.use('/api/activity', activityRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/customers', customersRouter);
+app.use('/api/machines', machinesRouter);
 
 // Global error handler (must be after routes)
 app.use(errorHandler);

@@ -1,53 +1,38 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 
-type ToastItem = {
-  id: number;
-  message: string;
-  variant: 'success' | 'error';
-};
-
-type ToastContextValue = {
-  showToast: (message: string, variant?: 'success' | 'error') => void;
-};
+type ToastItem = { id: number; message: string; variant: 'success' | 'error' };
+type ToastContextValue = { showToast: (message: string, variant?: 'success' | 'error') => void };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const value = useMemo(
-    () => ({
-      showToast(message: string, variant: 'success' | 'error' = 'success') {
-        const id = Date.now();
-        setToasts((current) => [...current, { id, message, variant }]);
-        window.setTimeout(() => {
-          setToasts((current) => current.filter((toast) => toast.id !== id));
-        }, 3200);
-      },
-    }),
-    [],
-  );
+  const showToast = useCallback((message: string, variant: 'success' | 'error' = 'success') => {
+    const id = Date.now();
+    setToasts((current) => [...current, { id, message, variant }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const value = useMemo(() => ({ showToast }), [showToast]);
+  const current = toasts[0];
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={cn(
-              'border px-3 py-2 text-[13px] font-medium shadow-panel',
-              toast.variant === 'success' && 'border-[#8fb39a] bg-[#eef5ef] text-app-success',
-              toast.variant === 'error' && 'border-[#d0aaa3] bg-[#f8ece9] text-app-danger',
-            )}
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
+      <Snackbar open={Boolean(current)} autoHideDuration={4000} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+        {current ? (
+          <Alert severity={current.variant} variant="filled" sx={{ width: '100%' }} onClose={() => setToasts((c) => c.slice(1))}>
+            {current.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </ToastContext.Provider>
   );
 }

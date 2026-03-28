@@ -70,6 +70,31 @@ const PART_TYPES = [
 
 const PART_VARIANTS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+const MACHINES = [
+  // Sheet metal
+  { code: 'SM-1', name: 'Sheet metal press 1', category: 'sheet_metal', description: 'Hydraulic sheet metal press, 200 ton' },
+  { code: 'SM-2', name: 'Sheet metal press 2', category: 'sheet_metal', description: 'Hydraulic sheet metal press, 100 ton' },
+  { code: 'SM-3', name: 'Sheet metal roller', category: 'sheet_metal', description: 'Sheet metal rolling machine' },
+  // Cutting
+  { code: 'CUT-1', name: 'Plasma cutter 1', category: 'cutting', description: 'CNC plasma cutting table 3000x1500' },
+  { code: 'CUT-2', name: 'Plasma cutter 2', category: 'cutting', description: 'CNC plasma cutting table 2000x1000' },
+  { code: 'CUT-3', name: 'Shear 1', category: 'cutting', description: 'Hydraulic guillotine shear 3m' },
+  { code: 'CUT-4', name: 'Shear 2', category: 'cutting', description: 'Hydraulic guillotine shear 2m' },
+  // Laser
+  { code: 'LASER-1', name: 'Fiber laser 1', category: 'laser', description: '6kW fiber laser, 3000x1500 bed' },
+  { code: 'LASER-2', name: 'Fiber laser 2', category: 'laser', description: '4kW fiber laser, 2000x1000 bed' },
+  { code: 'LASER-3', name: 'CO2 laser', category: 'laser', description: '3kW CO2 laser for non-metal cutting' },
+  // Robot bending
+  { code: 'RBEND-1', name: 'Robot bending cell 1', category: 'robot_bending', description: 'Automated press brake with robot loader' },
+  { code: 'RBEND-2', name: 'Robot bending cell 2', category: 'robot_bending', description: 'Automated press brake with robot loader' },
+  { code: 'RBEND-3', name: 'Robot bending cell 3', category: 'robot_bending', description: 'Automated panel bender' },
+  // Bending workcentres
+  { code: 'BEND-1', name: 'Press brake 1', category: 'bending', description: 'Manual press brake 3m, 160 ton' },
+  { code: 'BEND-2', name: 'Press brake 2', category: 'bending', description: 'Manual press brake 2m, 100 ton' },
+  { code: 'BEND-3', name: 'Press brake 3', category: 'bending', description: 'Manual press brake 1.5m, 60 ton' },
+  { code: 'BEND-4', name: 'Folding machine', category: 'bending', description: 'Swivel bending machine 2.5m' },
+];
+
 const WORKERS = [
   'Matti Virtanen', 'Juha Korhonen', 'Mikko Nieminen',
   'Timo Mäkelä', 'Antti Hämäläinen', 'Pekka Laine',
@@ -389,6 +414,45 @@ async function seed(): Promise<void> {
       );
     }
     console.log(`  activity_log: ${activityEntries.length}`);
+
+    // --- Machines ---
+    const machineIds: Record<string, string> = {};
+    for (const m of MACHINES) {
+      const id = uuidv4();
+      machineIds[m.code] = id;
+      await client.query(
+        `INSERT INTO machines (id, name, code, category, description)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, m.name, m.code, m.category, m.description]
+      );
+    }
+    console.log(`  machines: ${MACHINES.length}`);
+
+    // --- Machine assignments (some items currently at machines) ---
+    const machineAssignItems = shuffled.slice(0, 20);
+    let machineAssignCount = 0;
+    for (const item of machineAssignItems) {
+      const machine = randomChoice(MACHINES);
+      const qty = randomInt(1, 3);
+      const date = randomDate(14);
+      const worker = randomChoice(WORKERS);
+      const id = uuidv4();
+
+      await client.query(
+        `INSERT INTO machine_assignments (id, item_id, machine_id, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, item.id, machineIds[machine.code], qty, date, worker, randomChoice([null, 'Processing', 'Waiting for setup', 'In queue'])]
+      );
+
+      // Activity log entry for the machine assignment
+      await client.query(
+        `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes, created_at)
+         VALUES ($1, $2, 'move', $3, $4, $5, $6, $7)`,
+        [uuidv4(), item.id, null, `M/${machine.code}`, worker, `Sent to ${machine.name}`, date]
+      );
+      machineAssignCount++;
+    }
+    console.log(`  machine_assignments: ${machineAssignCount}`);
 
     await client.query('COMMIT');
     console.log('Seed complete.');

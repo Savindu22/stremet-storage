@@ -1,3 +1,6 @@
+import Chip from '@mui/material/Chip';
+import PlaceIcon from '@mui/icons-material/PlaceOutlined';
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import { locationLabel } from '@/lib/utils';
 
 type LocationBadgeProps = {
@@ -9,6 +12,36 @@ type LocationBadgeProps = {
   } | null;
 };
 
+type MachineLocationBadgeProps = {
+  code: string;
+  name?: string;
+};
+
 export function LocationBadge({ location }: LocationBadgeProps) {
-  return <span className="inline-flex border border-app-borderLight bg-app-panelMuted px-1.5 py-0.5 text-[11px] text-app-text">{locationLabel(location)}</span>;
+  const label = locationLabel(location);
+  const inStorage = label !== 'Not in storage';
+
+  return (
+    <Chip
+      icon={<PlaceIcon sx={{ fontSize: 16 }} />}
+      label={label}
+      size="small"
+      variant={inStorage ? 'outlined' : 'filled'}
+      color={inStorage ? 'primary' : 'default'}
+      sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+    />
+  );
+}
+
+export function MachineLocationBadge({ code, name }: MachineLocationBadgeProps) {
+  return (
+    <Chip
+      icon={<PrecisionManufacturingIcon sx={{ fontSize: 16 }} />}
+      label={name ? `${code} — ${name}` : code}
+      size="small"
+      variant="outlined"
+      color="warning"
+      sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+    />
+  );
 }

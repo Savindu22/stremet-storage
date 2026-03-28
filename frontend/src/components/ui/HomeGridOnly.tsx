@@ -3,15 +3,6 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 
-function findButton(label: string) {
-  return Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === label) as HTMLButtonElement | undefined;
-}
-
-function findControlsRow() {
-  const searchInput = document.getElementById('map-search');
-  return searchInput?.closest('label')?.parentElement?.parentElement as HTMLElement | null;
-}
-
 export function HomeGridOnly() {
   const pathname = usePathname();
 
@@ -27,35 +18,30 @@ export function HomeGridOnly() {
     const timer = window.setInterval(() => {
       attempts += 1;
 
-      const gridButton = findButton('Grid view');
-      const floorButton = findButton('Floor plan');
+      // Find toggle buttons and force grid view
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const gridButton = buttons.find((b) => b.textContent?.includes('Grid view'));
+      const floorButton = buttons.find((b) => b.textContent?.includes('Floor plan'));
 
-      if (floorButton) {
-        floorButton.style.display = 'none';
+      if (floorButton) floorButton.style.display = 'none';
+
+      if (gridButton && !gridButton.classList.contains('Mui-selected')) {
+        gridButton.click();
       }
 
-      if (gridButton) {
-        if (!gridButton.className.includes('bg-app-primary')) {
-          gridButton.click();
-        }
+      // Hide controls row
+      const searchInput = document.getElementById('map-search');
+      const controlsRow = searchInput?.closest('[class*="MuiBox"]')?.parentElement as HTMLElement | null;
+      if (controlsRow) controlsRow.style.display = 'none';
+
+      // Rename headings
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span'));
+      for (const el of headings) {
+        if (el.textContent?.trim() === 'Warehouse map') el.textContent = 'Storage grid';
+        if (el.textContent?.trim() === 'Factory floor') el.textContent = 'Storage grid';
       }
 
-      const controlsRow = findControlsRow();
-      if (controlsRow) {
-        controlsRow.style.display = 'none';
-      }
-
-      const homeHeading = Array.from(document.querySelectorAll('h1, h2')).find((node) => node.textContent?.trim() === 'Warehouse map');
-      if (homeHeading) {
-        homeHeading.textContent = 'Storage grid';
-      }
-
-      const floorLabel = Array.from(document.querySelectorAll('div, span, p')).find((node) => node.textContent?.trim() === 'Factory floor');
-      if (floorLabel) {
-        floorLabel.textContent = 'Storage grid';
-      }
-
-      if ((gridButton && gridButton.className.includes('bg-app-primary')) || attempts > 40) {
+      if ((gridButton && gridButton.classList.contains('Mui-selected')) || attempts > 40) {
         window.clearInterval(timer);
       }
     }, 80);

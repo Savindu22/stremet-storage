@@ -1,6 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Grid from '@mui/material/Grid';
+import MuiButton from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Step from '@mui/material/Step';
+import StepLabel from '@mui/material/StepLabel';
+import Stepper from '@mui/material/Stepper';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
 import type { CreateItemRequest, Customer, DuplicateWarning, ItemWithLocation, LocationSuggestion, ZoneWithStats } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -14,18 +28,11 @@ import { api, type ZoneDetail } from '@/lib/api';
 
 type FlowState = 'lookup' | 'duplicate' | 'details' | 'location' | 'confirm' | 'success';
 
-const blankNewItem: CreateItemRequest = {
-  item_code: '',
-  name: '',
-  material: '',
-  type: 'customer_order',
-  quantity: 1,
-};
+const blankNewItem: CreateItemRequest = { item_code: '', name: '', material: '', type: 'customer_order', quantity: 1 };
+const stepLabels = ['Look up', 'Details', 'Location', 'Confirm'] as const;
 
-const stepLabels = ['Look up', 'Duplicate', 'Details', 'Location', 'Confirm', 'Done'] as const;
-
-function getCurrentStep(flow: FlowState) {
-  return { lookup: 0, duplicate: 1, details: 2, location: 3, confirm: 4, success: 5 }[flow];
+function getActiveStep(flow: FlowState) {
+  return { lookup: 0, duplicate: 0, details: 1, location: 2, confirm: 3, success: 4 }[flow];
 }
 
 export default function CheckInPage() {
@@ -58,371 +65,264 @@ export default function CheckInPage() {
   }, []);
 
   useEffect(() => {
-    void Promise.all([api.getCustomers(), api.getZones()]).then(([customerResponse, zoneResponse]) => {
-      setCustomers(customerResponse.data);
-      setZones(zoneResponse.data);
-    });
+    void Promise.all([api.getCustomers(), api.getZones()]).then(([c, z]) => { setCustomers(c.data); setZones(z.data); });
   }, []);
 
   useEffect(() => {
-    if (!selectedZoneId) {
-      setZoneDetail(null);
-      return;
-    }
-
-    void api.getZone(selectedZoneId).then((response) => setZoneDetail(response.data));
+    if (!selectedZoneId) { setZoneDetail(null); return; }
+    void api.getZone(selectedZoneId).then((r) => setZoneDetail(r.data));
   }, [selectedZoneId]);
 
   useEffect(() => {
-    if (preselectedZoneId) {
-      setSelectedZoneId(preselectedZoneId);
-    }
-    if (preselectedShelfSlotId) {
-      setSelectedShelfSlotId(preselectedShelfSlotId);
-    }
+    if (preselectedZoneId) setSelectedZoneId(preselectedZoneId);
+    if (preselectedShelfSlotId) setSelectedShelfSlotId(preselectedShelfSlotId);
   }, [preselectedShelfSlotId, preselectedZoneId]);
 
   useEffect(() => {
-    if (preselectedZoneId || !preselectedRackId) {
-      return;
-    }
-
-    void api.getRack(preselectedRackId).then((response) => {
-      setSelectedZoneId(response.data.zone_id);
-    });
+    if (preselectedZoneId || !preselectedRackId) return;
+    void api.getRack(preselectedRackId).then((r) => setSelectedZoneId(r.data.zone_id));
   }, [preselectedRackId, preselectedZoneId]);
 
   const manualShelfOptions = useMemo(
-    () =>
-      zoneDetail?.racks.flatMap((rack) =>
-        rack.shelves
-          .filter(() => (preselectedRackId ? rack.id === preselectedRackId : true))
-          .filter((shelf) => shelf.current_count < shelf.capacity)
-          .map((shelf) => ({ value: shelf.id, label: `${rack.code} > Shelf ${shelf.shelf_number} (${shelf.capacity - shelf.current_count} free)` })),
-      ) || [],
+    () => zoneDetail?.racks.flatMap((rack) =>
+      rack.shelves
+        .filter(() => (preselectedRackId ? rack.id === preselectedRackId : true))
+        .filter((shelf) => shelf.current_count < shelf.capacity)
+        .map((shelf) => ({ value: shelf.id, label: `${rack.code} > Shelf ${shelf.shelf_number} (${shelf.capacity - shelf.current_count} free)` })),
+    ) || [],
     [preselectedRackId, zoneDetail],
   );
 
   const selectedLocationLabel = useMemo(() => {
-    const suggested = suggestions.find((suggestion) => suggestion.shelf_slot_id === selectedShelfSlotId);
-    if (suggested) {
-      return `${suggested.zone_code} > ${suggested.rack_code} > Shelf ${suggested.shelf_number}`;
-    }
-
-    return manualShelfOptions.find((option) => option.value === selectedShelfSlotId)?.label || 'Select a shelf';
+    const s = suggestions.find((x) => x.shelf_slot_id === selectedShelfSlotId);
+    if (s) return `${s.zone_code} > ${s.rack_code} > Shelf ${s.shelf_number}`;
+    return manualShelfOptions.find((o) => o.value === selectedShelfSlotId)?.label || 'Select a shelf';
   }, [manualShelfOptions, selectedShelfSlotId, suggestions]);
 
   async function handleLookup() {
-    if (!lookupCode.trim()) {
-      showToast('Enter an item code', 'error');
-      return;
-    }
-
+    if (!lookupCode.trim()) { showToast('Enter an item code', 'error'); return; }
     setLoading(true);
     setWarning('');
     try {
-      const [itemsResponse, duplicatesResponse] = await Promise.all([
-        api.getItems({ search: lookupCode.trim(), per_page: 100, page: 1 }),
-        api.getDuplicateWarnings(),
-      ]);
-
-      const exactMatch = itemsResponse.data.find((item) => item.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
-      const duplicateMatch = duplicatesResponse.data.find((entry) => entry.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
-
-      setExistingItem(exactMatch);
-      setNewItem((current) => ({ ...current, item_code: lookupCode.trim() }));
-      setDuplicate(duplicateMatch);
-
-      if (duplicateMatch) {
-        setFlow('duplicate');
-        return;
-      }
-
-      if (exactMatch) {
-        const suggestionResponse = await api.getSuggestedLocations(exactMatch.id);
-        setSuggestions(suggestionResponse.data);
-      }
-
+      const [itemsRes, dupRes] = await Promise.all([api.getItems({ search: lookupCode.trim(), per_page: 100, page: 1 }), api.getDuplicateWarnings()]);
+      const exact = itemsRes.data.find((i) => i.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
+      const dup = dupRes.data.find((e) => e.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
+      setExistingItem(exact);
+      setNewItem((c) => ({ ...c, item_code: lookupCode.trim() }));
+      setDuplicate(dup);
+      if (dup) { setFlow('duplicate'); return; }
+      if (exact) { const sr = await api.getSuggestedLocations(exact.id); setSuggestions(sr.data); }
       setFlow('details');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lookup failed', 'error');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   async function continueFromDetails() {
     if (existingItem) {
-      if (suggestions.length === 0) {
-        const suggestionResponse = await api.getSuggestedLocations(existingItem.id);
-        setSuggestions(suggestionResponse.data);
-      }
+      if (suggestions.length === 0) { const sr = await api.getSuggestedLocations(existingItem.id); setSuggestions(sr.data); }
       setFlow('location');
       return;
     }
-
-    if (!newItem.name || !newItem.type) {
-      showToast('Complete the new item form first', 'error');
-      return;
-    }
-
+    if (!newItem.name || !newItem.type) { showToast('Complete the new item form first', 'error'); return; }
     try {
       const created = await api.createItem(newItem);
-      const fullItem = await api.getItem(created.data.id);
-      setExistingItem(fullItem.data);
-      const suggestionResponse = await api.getSuggestedLocations(created.data.id);
-      setSuggestions(suggestionResponse.data);
+      const full = await api.getItem(created.data.id);
+      setExistingItem(full.data);
+      const sr = await api.getSuggestedLocations(created.data.id);
+      setSuggestions(sr.data);
       setFlow('location');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to create item', 'error');
-    }
+    } catch (err) { showToast(err instanceof Error ? err.message : 'Unable to create item', 'error'); }
   }
 
   async function confirmCheckIn() {
-    if (!existingItem?.id || !selectedShelfSlotId || !workerName) {
-      showToast('Worker name and storage location are required', 'error');
-      return;
-    }
-
+    if (!existingItem?.id || !selectedShelfSlotId || !workerName) { showToast('Worker name and storage location are required', 'error'); return; }
     setLoading(true);
     try {
-      const response = await api.checkInItem({
-        item_id: existingItem.id,
-        shelf_slot_id: selectedShelfSlotId,
-        quantity: existingItem.quantity,
-        checked_in_by: workerName,
-        notes: notes || undefined,
-      });
-      setResultLocation(response.data.location);
-      setWarning(response.warning || '');
+      const r = await api.checkInItem({ item_id: existingItem.id, shelf_slot_id: selectedShelfSlotId, quantity: existingItem.quantity, checked_in_by: workerName, notes: notes || undefined });
+      setResultLocation(r.data.location);
+      setWarning(r.warning || '');
       setFlow('success');
       showToast('Item checked in successfully');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Check-in failed', 'error');
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { showToast(err instanceof Error ? err.message : 'Check-in failed', 'error'); }
+    finally { setLoading(false); }
   }
 
   return (
-    <div className="space-y-2.5">
-      <section className="app-frame px-3 py-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h1 className="app-page-title">Check in item</h1>
-            <span className="text-[11px] uppercase tracking-[0.06em] text-app-textMuted">Receiving flow</span>
-          </div>
-          <div className="text-[11px] font-medium text-app-textMuted">Step {getCurrentStep(flow) + 1} of {stepLabels.length}</div>
-        </div>
-        <div className="mt-2 grid gap-1 sm:grid-cols-3 xl:grid-cols-6">
-          {stepLabels.map((label, index) => {
-            const active = index === getCurrentStep(flow);
-            const completed = index < getCurrentStep(flow);
+    <Stack spacing={2.5}>
+      <Typography variant="h3">Check in item</Typography>
 
-            return (
-              <div
-                key={label}
-                className={`border px-2.5 py-1.5 text-[12px] ${active ? 'border-app-primary bg-[#eaf1f7] text-app-text' : completed ? 'border-[#b7cfc0] bg-[#edf4ef] text-app-text' : 'border-app-borderLight bg-app-panelMuted text-app-textMuted'}`}
-              >
-                {label}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stepper activeStep={getActiveStep(flow)} alternativeLabel>
+          {stepLabels.map((label) => (
+            <Step key={label}><StepLabel>{label}</StepLabel></Step>
+          ))}
+        </Stepper>
+      </Paper>
 
-      <section className="app-frame px-3 py-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[280px] flex-1">
-            <Input label="Item code" value={lookupCode} onChange={(event) => setLookupCode(event.target.value)} placeholder="KONE-001-PANEL-A" />
-          </div>
-          <Button onClick={handleLookup} disabled={loading}>{loading ? 'Looking up...' : 'Look up'}</Button>
-        </div>
-        {preselectedZoneId || preselectedRackId || preselectedShelfSlotId ? (
-          <div className="mt-2 text-[12px] text-app-textMuted">Map context is active. The zone or rack selection was prefilled from the storage grid.</div>
-        ) : null}
-      </section>
+      {/* Lookup */}
+      <Card>
+        <CardContent>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'flex-end' }}>
+            <Box flex={1}><Input label="Item code" value={lookupCode} onChange={(e: any) => setLookupCode(e.target.value)} placeholder="KONE-001-PANEL-A" /></Box>
+            <Button onClick={handleLookup} disabled={loading}>{loading ? 'Looking up...' : 'Look up'}</Button>
+          </Stack>
+          {(preselectedZoneId || preselectedRackId || preselectedShelfSlotId) ? (
+            <Typography variant="caption" color="text.secondary" mt={1} display="block">Map context is active. Zone or rack was prefilled from the storage grid.</Typography>
+          ) : null}
+        </CardContent>
+      </Card>
 
+      {/* Duplicate warning */}
       {flow === 'duplicate' && duplicate ? (
-        <section className="app-frame px-3 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warning">Duplicate</Badge>
-            <h2 className="app-section-title">This item code already exists in storage</h2>
-          </div>
-          <div className="app-panel-grid mt-2 md:grid-cols-2">
-            {duplicate.existing_locations.map((location, index) => (
-              <div key={`${location.rack_code}-${index}`} className="px-3 py-2.5">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Stored copy {index + 1}</div>
-                <div className="mt-1 text-[13px] text-app-text">{`${location.zone_name} > ${location.rack_code} > Shelf ${location.shelf_number}`}</div>
-                <div className="mt-1 text-[12px] text-app-textMuted">{location.quantity} units</div>
-              </div>
+        <Paper variant="outlined" sx={{ p: 2.5, borderColor: 'warning.main', bgcolor: '#fff8e1' }}>
+          <Stack direction="row" spacing={1} alignItems="center" mb={1.5}>
+            <WarningIcon color="warning" />
+            <Typography variant="subtitle1">This item code already exists in storage</Typography>
+          </Stack>
+          <Grid container spacing={2}>
+            {duplicate.existing_locations.map((loc, i) => (
+              <Grid size={{ xs: 12, md: 6 }} key={i}>
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography variant="caption" color="text.secondary">Copy {i + 1}</Typography>
+                  <Typography variant="body2">{`${loc.zone_name} > ${loc.rack_code} > Shelf ${loc.shelf_number}`}</Typography>
+                  <Typography variant="caption" color="text.secondary">{loc.quantity} units</Typography>
+                </Paper>
+              </Grid>
             ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          </Grid>
+          <Stack direction="row" spacing={1} mt={2}>
             <Button onClick={() => setFlow('details')}>Continue anyway</Button>
             <Button variant="secondary" onClick={() => setFlow('lookup')}>Cancel</Button>
-          </div>
-        </section>
+          </Stack>
+        </Paper>
       ) : null}
 
+      {/* Details */}
       {(flow === 'details' || flow === 'location' || flow === 'confirm' || flow === 'success') && (
-        <section className="app-frame px-3 py-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="app-section-title">Item details</h2>
-            {existingItem ? <span className="font-data text-[12px] text-app-text">{existingItem.item_code}</span> : null}
-          </div>
-
-          {existingItem ? (
-            <div className="app-panel-grid md:grid-cols-2">
-              <div className="px-3 py-2.5">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Name</div>
-                <div className="mt-1 text-[13px] text-app-text">{existingItem.name}</div>
-              </div>
-              <div className="px-3 py-2.5">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Customer</div>
-                <div className="mt-1 text-[13px] text-app-text">{existingItem.customer_name || '-'}</div>
-              </div>
-              <div className="px-3 py-2.5">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Material</div>
-                <div className="mt-1 text-[13px] text-app-text">{existingItem.material || '-'}</div>
-              </div>
-              <div className="px-3 py-2.5">
-                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Current location</div>
-                <div className="mt-1.5"><LocationBadge location={existingItem.current_location} /></div>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              <Input label="Name" value={newItem.name} onChange={(event) => setNewItem((current) => ({ ...current, name: event.target.value }))} />
-              <Select
-                label="Customer"
-                value={newItem.customer_id || ''}
-                onChange={(event) => setNewItem((current) => ({ ...current, customer_id: event.target.value || undefined }))}
-                options={[{ label: 'No customer', value: '' }, ...customers.map((customer) => ({ label: customer.name, value: customer.id }))]}
-              />
-              <Input label="Material" value={newItem.material} onChange={(event) => setNewItem((current) => ({ ...current, material: event.target.value }))} />
-              <Select
-                label="Type"
-                value={newItem.type}
-                onChange={(event) => setNewItem((current) => ({ ...current, type: event.target.value as CreateItemRequest['type'] }))}
-                options={[
-                  { label: 'Customer order', value: 'customer_order' },
-                  { label: 'General stock', value: 'general_stock' },
-                ]}
-              />
-              <Input label="Dimensions" value={newItem.dimensions || ''} onChange={(event) => setNewItem((current) => ({ ...current, dimensions: event.target.value }))} />
-              <Input label="Weight (kg)" type="number" value={newItem.weight_kg || ''} onChange={(event) => setNewItem((current) => ({ ...current, weight_kg: Number(event.target.value) || 0 }))} />
-              <Input label="Order number" value={newItem.order_number || ''} onChange={(event) => setNewItem((current) => ({ ...current, order_number: event.target.value }))} />
-              <Input label="Quantity" type="number" min="1" value={String(newItem.quantity)} onChange={(event) => setNewItem((current) => ({ ...current, quantity: Number(event.target.value) || 1 }))} />
-            </div>
-          )}
-
-          {flow === 'details' ? (
-            <div className="mt-3 flex justify-end">
-              <Button onClick={() => void continueFromDetails()}>Continue to location</Button>
-            </div>
-          ) : null}
-        </section>
+        <Card>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+              <Typography variant="subtitle1">Item details</Typography>
+              {existingItem ? <Typography variant="body2" fontFamily="monospace">{existingItem.item_code}</Typography> : null}
+            </Stack>
+            {existingItem ? (
+              <Grid container spacing={2}>
+                {[['Name', existingItem.name], ['Customer', existingItem.customer_name || '-'], ['Material', existingItem.material || '-']].map(([label, value]) => (
+                  <Grid size={{ xs: 12, md: 4 }} key={label}>
+                    <Typography variant="caption" color="text.secondary">{label}</Typography>
+                    <Typography variant="body2">{value}</Typography>
+                  </Grid>
+                ))}
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Typography variant="caption" color="text.secondary">Current location</Typography>
+                  <Box mt={0.5}><LocationBadge location={existingItem.current_location} /></Box>
+                </Grid>
+              </Grid>
+            ) : (
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}><Input label="Name" value={newItem.name} onChange={(e: any) => setNewItem((c) => ({ ...c, name: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><Select label="Customer" value={newItem.customer_id || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, customer_id: e.target.value || undefined }))} options={[{ label: 'No customer', value: '' }, ...customers.map((c) => ({ label: c.name, value: c.id }))]} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><Input label="Material" value={newItem.material} onChange={(e: any) => setNewItem((c) => ({ ...c, material: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><Select label="Type" value={newItem.type} onChange={(e: any) => setNewItem((c) => ({ ...c, type: e.target.value as CreateItemRequest['type'] }))} options={[{ label: 'Customer order', value: 'customer_order' }, { label: 'General stock', value: 'general_stock' }]} /></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><Input label="Dimensions" value={newItem.dimensions || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, dimensions: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><Input label="Weight (kg)" type="number" value={newItem.weight_kg || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, weight_kg: Number(e.target.value) || 0 }))} /></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><Input label="Order number" value={newItem.order_number || ''} onChange={(e: any) => setNewItem((c) => ({ ...c, order_number: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 3 }}><Input label="Quantity" type="number" min="1" value={String(newItem.quantity)} onChange={(e: any) => setNewItem((c) => ({ ...c, quantity: Number(e.target.value) || 1 }))} /></Grid>
+              </Grid>
+            )}
+            {flow === 'details' ? (
+              <Stack direction="row" justifyContent="flex-end" mt={2}>
+                <Button onClick={() => void continueFromDetails()}>Continue to location</Button>
+              </Stack>
+            ) : null}
+          </CardContent>
+        </Card>
       )}
 
+      {/* Location */}
       {(flow === 'location' || flow === 'confirm' || flow === 'success') && existingItem ? (
-        <section className="app-frame px-3 py-3">
-          <h2 className="app-section-title">Location</h2>
-          <div className="mt-2 grid gap-2 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="space-y-2">
-              {suggestions.length > 0 ? (
-                suggestions.map((suggestion) => {
-                  const selected = selectedShelfSlotId === suggestion.shelf_slot_id;
-
-                  return (
-                    <button
-                      key={suggestion.shelf_slot_id}
-                      type="button"
-                      className={`block w-full border px-3 py-2.5 text-left ${selected ? 'border-app-primary bg-[#eaf1f7]' : 'border-app-borderLight bg-app-panel hover:bg-app-panelMuted'}`}
-                      onClick={() => {
-                        setSelectedShelfSlotId(suggestion.shelf_slot_id);
-                        setFlow('confirm');
-                      }}
-                    >
-                      <div className="font-data text-[12px] text-app-text">{`${suggestion.zone_code} > ${suggestion.rack_code} > Shelf ${suggestion.shelf_number}`}</div>
-                      <div className="mt-1 text-[12px] text-app-textMuted">{suggestion.reason}</div>
-                    </button>
-                  );
-                })
-              ) : (
-                <EmptyState title="No smart suggestions available" description="Pick a shelf manually." />
-              )}
-            </div>
-
-            <div className="app-frame-soft px-3 py-3">
-              <div className="grid gap-2">
-                <Select
-                  label="Zone"
-                  value={selectedZoneId}
-                  onChange={(event) => setSelectedZoneId(event.target.value)}
-                  options={[{ label: 'Select zone', value: '' }, ...zones.map((zone) => ({ label: `${zone.code} - ${zone.name}`, value: zone.id }))]}
-                />
-                <Select
-                  label="Shelf"
-                  value={selectedShelfSlotId}
-                  onChange={(event) => {
-                    setSelectedShelfSlotId(event.target.value);
-                    if (event.target.value) {
-                      setFlow('confirm');
-                    }
-                  }}
-                  options={[{ label: 'Select shelf', value: '' }, ...manualShelfOptions]}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+        <Card>
+          <CardContent>
+            <Typography variant="subtitle1" mb={2}>Choose location</Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, lg: 8 }}>
+                {suggestions.length > 0 ? (
+                  <Stack spacing={1}>
+                    {suggestions.map((s) => (
+                      <Paper
+                        key={s.shelf_slot_id}
+                        variant="outlined"
+                        onClick={() => { setSelectedShelfSlotId(s.shelf_slot_id); setFlow('confirm'); }}
+                        sx={{ p: 2, cursor: 'pointer', borderColor: selectedShelfSlotId === s.shelf_slot_id ? 'primary.main' : 'divider', bgcolor: selectedShelfSlotId === s.shelf_slot_id ? 'primary.50' : 'background.paper', '&:hover': { borderColor: 'primary.light' } }}
+                      >
+                        <Typography variant="body2" fontFamily="monospace">{`${s.zone_code} > ${s.rack_code} > Shelf ${s.shelf_number}`}</Typography>
+                        <Typography variant="caption" color="text.secondary">{s.reason}</Typography>
+                      </Paper>
+                    ))}
+                  </Stack>
+                ) : (
+                  <EmptyState title="No smart suggestions" description="Pick a shelf manually." />
+                )}
+              </Grid>
+              <Grid size={{ xs: 12, lg: 4 }}>
+                <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50' }}>
+                  <Stack spacing={2}>
+                    <Select label="Zone" value={selectedZoneId} onChange={(e: any) => setSelectedZoneId(e.target.value)} options={[{ label: 'Select zone', value: '' }, ...zones.map((z) => ({ label: `${z.code} - ${z.name}`, value: z.id }))]} />
+                    <Select label="Shelf" value={selectedShelfSlotId} onChange={(e: any) => { setSelectedShelfSlotId(e.target.value); if (e.target.value) setFlow('confirm'); }} options={[{ label: 'Select shelf', value: '' }, ...manualShelfOptions]} />
+                  </Stack>
+                </Paper>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
       ) : null}
 
+      {/* Confirm */}
       {(flow === 'confirm' || flow === 'success') && existingItem ? (
-        <section className="app-frame px-3 py-3">
-          <h2 className="app-section-title">Confirm</h2>
-          <div className="app-panel-grid mt-2 md:grid-cols-2">
-            <div className="px-3 py-2.5">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Item</div>
-              <div className="mt-1 text-[13px] text-app-text">{existingItem.name}</div>
-              <div className="font-data mt-1 text-[12px] text-app-text">{existingItem.item_code}</div>
-            </div>
-            <div className="px-3 py-2.5">
-              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Selected location</div>
-              <div className="mt-1 text-[13px] text-app-text">{selectedLocationLabel}</div>
-            </div>
-          </div>
-          <div className="mt-2 grid gap-2 md:grid-cols-2">
-            <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
-            <label className="flex flex-col gap-1 text-sm text-app-textMuted">
-              <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Notes</span>
-              <textarea className="app-textarea" value={notes} onChange={(event) => setNotes(event.target.value)} />
-            </label>
-          </div>
-          {flow !== 'success' ? (
-            <div className="mt-3 flex justify-end">
-              <Button onClick={() => void confirmCheckIn()} disabled={loading}>
-                {loading ? 'Confirming...' : 'Confirm check-in'}
-              </Button>
-            </div>
-          ) : null}
-        </section>
+        <Card>
+          <CardContent>
+            <Typography variant="subtitle1" mb={2}>Confirm check-in</Typography>
+            <Grid container spacing={2} mb={2}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Typography variant="caption" color="text.secondary">Item</Typography>
+                <Typography variant="body2">{existingItem.name}</Typography>
+                <Typography variant="caption" fontFamily="monospace">{existingItem.item_code}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Typography variant="caption" color="text.secondary">Selected location</Typography>
+                <Typography variant="body2">{selectedLocationLabel}</Typography>
+              </Grid>
+            </Grid>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 6 }}><Input label="Worker name" value={workerName} onChange={(e: any) => setWorkerName(e.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} fullWidth />
+              </Grid>
+            </Grid>
+            {flow !== 'success' ? (
+              <Stack direction="row" justifyContent="flex-end" mt={2}>
+                <Button onClick={() => void confirmCheckIn()} disabled={loading}>{loading ? 'Confirming...' : 'Confirm check-in'}</Button>
+              </Stack>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
+      {/* Success */}
       {flow === 'success' ? (
-        <section className="app-frame-soft px-3 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="success">Stored</Badge>
-            <h2 className="app-section-title">Check-in complete</h2>
-          </div>
-          <div className="mt-1 text-[13px] text-app-text">Stored at {resultLocation}</div>
-          {warning ? <div className="mt-1 text-[12px] text-app-warning">{warning}</div> : null}
-          <div className="mt-3 flex justify-end">
+        <Paper variant="outlined" sx={{ p: 3, borderColor: 'success.main', bgcolor: '#e8f5e9' }}>
+          <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+            <CheckCircleIcon color="success" />
+            <Typography variant="subtitle1">Check-in complete</Typography>
+          </Stack>
+          <Typography variant="body2">Stored at {resultLocation}</Typography>
+          {warning ? <Typography variant="caption" color="warning.main">{warning}</Typography> : null}
+          <Stack direction="row" justifyContent="flex-end" mt={2}>
             <Button onClick={() => window.location.reload()}>Check in another item</Button>
-          </div>
-        </section>
+          </Stack>
+        </Paper>
       ) : null}
-    </div>
+    </Stack>
   );
 }

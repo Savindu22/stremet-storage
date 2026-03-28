@@ -1,36 +1,25 @@
 'use client';
 
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
+import MuiButton from '@mui/material/Button';
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = {
   variant?: 'primary' | 'secondary' | 'danger';
   fullWidth?: boolean;
   children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  type?: 'button' | 'submit' | 'reset';
+  onClick?: () => void;
 };
 
-export function Button({
-  className,
-  variant = 'primary',
-  fullWidth,
-  type = 'button',
-  children,
-  ...props
-}: ButtonProps) {
+export function Button({ variant = 'primary', fullWidth, children, disabled, type = 'button', onClick }: ButtonProps) {
+  const muiVariant = variant === 'secondary' ? 'outlined' : 'contained';
+  const color = variant === 'danger' ? 'error' : 'primary';
+
   return (
-    <button
-      type={type}
-      className={cn(
-        'inline-flex min-h-9 items-center justify-center border px-3 py-1.5 text-[13px] font-semibold shadow-panel transition-[background-color,box-shadow,transform] active:translate-y-[1px] active:shadow-none disabled:cursor-not-allowed disabled:opacity-50',
-        variant === 'primary' && 'border-app-primaryHover bg-app-primary text-white hover:bg-app-primaryHover',
-        variant === 'secondary' && 'border-app-border bg-app-panel text-app-text hover:bg-app-panelMuted',
-        variant === 'danger' && 'border-[#7d2f24] bg-app-danger text-white hover:bg-[#7f3025]',
-        fullWidth && 'w-full',
-        className,
-      )}
-      {...props}
-    >
+    <MuiButton variant={muiVariant} color={color} fullWidth={fullWidth} disabled={disabled} type={type} onClick={onClick}>
       {children}
-    </button>
+    </MuiButton>
   );
 }

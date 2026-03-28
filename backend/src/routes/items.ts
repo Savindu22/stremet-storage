@@ -298,6 +298,16 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
     LIMIT 1
   `, [id]);
 
+  // Machine locations
+  const machineResult = await pool.query(`
+    SELECT ma.id AS assignment_id, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
+      m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
+    FROM machine_assignments ma
+    JOIN machines m ON ma.machine_id = m.id
+    WHERE ma.item_id = $1 AND ma.removed_at IS NULL
+    ORDER BY ma.assigned_at DESC
+  `, [id]);
+
   // Activity history
   const historyResult = await pool.query(`
     SELECT * FROM activity_log
@@ -309,6 +319,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
     data: {
       ...itemResult.rows[0],
       current_location: locationResult.rows[0] || null,
+      machine_locations: machineResult.rows,
       activity_history: historyResult.rows,
     },
   });
@@ -545,12 +556,16 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
   }
 }));
 
-// POST /api/items/move — move item between locations (supports partial quantity)
+// POST /api/items/move — move item between locations (shelf↔shelf, shelf↔machine, machine↔shelf, machine↔machine)
 itemsRouter.post('/move', asyncHandler(async (req, res) => {
-  const { assignment_id, to_shelf_slot_id, performed_by, notes, quantity } = req.body;
+  const { assignment_id, source_type = 'shelf', to_shelf_slot_id, to_machine_id, performed_by, notes, quantity } = req.body;
 
-  if (!assignment_id || !to_shelf_slot_id || !performed_by) {
-    res.status(400).json({ error: 'assignment_id, to_shelf_slot_id, and performed_by are required' });
+  if (!assignment_id || !performed_by) {
+    res.status(400).json({ error: 'assignment_id and performed_by are required' });
+    return;
+  }
+  if (!to_shelf_slot_id && !to_machine_id) {
+    res.status(400).json({ error: 'Either to_shelf_slot_id or to_machine_id is required' });
     return;
   }
 
@@ -558,120 +573,173 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Get current assignment
-    const assignmentResult = await client.query(`
-      SELECT sa.*, ss.id AS old_slot_id, z.code AS old_zone_code, r.code AS old_rack_code, ss.shelf_number AS old_shelf_number
-      FROM storage_assignments sa
-      JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
-      JOIN racks r ON ss.rack_id = r.id
-      JOIN zones z ON r.zone_id = z.id
-      WHERE sa.id = $1 AND sa.checked_out_at IS NULL
-    `, [assignment_id]);
+    let assignment: Record<string, unknown>;
+    let fromStr: string;
+    let itemId: string;
+    let totalQty: number;
 
-    if (assignmentResult.rows.length === 0) {
-      res.status(404).json({ error: 'Active storage assignment not found' });
-      await client.query('ROLLBACK');
-      return;
+    if (source_type === 'machine') {
+      // Source is a machine assignment
+      const maResult = await client.query(`
+        SELECT ma.*, m.code AS machine_code, m.name AS machine_name
+        FROM machine_assignments ma
+        JOIN machines m ON ma.machine_id = m.id
+        WHERE ma.id = $1 AND ma.removed_at IS NULL
+      `, [assignment_id]);
+
+      if (maResult.rows.length === 0) {
+        res.status(404).json({ error: 'Active machine assignment not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      assignment = maResult.rows[0];
+      itemId = assignment.item_id as string;
+      totalQty = assignment.quantity as number;
+      fromStr = `M/${assignment.machine_code}`;
+    } else {
+      // Source is a shelf assignment
+      const saResult = await client.query(`
+        SELECT sa.*, ss.id AS old_slot_id, z.code AS old_zone_code, r.code AS old_rack_code, ss.shelf_number AS old_shelf_number
+        FROM storage_assignments sa
+        JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+        JOIN racks r ON ss.rack_id = r.id
+        JOIN zones z ON r.zone_id = z.id
+        WHERE sa.id = $1 AND sa.checked_out_at IS NULL
+      `, [assignment_id]);
+
+      if (saResult.rows.length === 0) {
+        res.status(404).json({ error: 'Active storage assignment not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      assignment = saResult.rows[0];
+      itemId = assignment.item_id as string;
+      totalQty = assignment.quantity as number;
+      fromStr = `${assignment.old_zone_code}/${(assignment.old_rack_code as string).replace(/^[A-Z]-/, '')}/S${assignment.old_shelf_number}`;
     }
 
-    const assignment = assignmentResult.rows[0];
-    const moveQty = quantity != null ? Number(quantity) : assignment.quantity;
+    const moveQty = quantity != null ? Number(quantity) : totalQty;
 
     if (moveQty <= 0 || !Number.isInteger(moveQty)) {
       res.status(400).json({ error: 'Quantity must be a positive integer' });
       await client.query('ROLLBACK');
       return;
     }
-
-    if (moveQty > assignment.quantity) {
-      res.status(400).json({ error: `Cannot move ${moveQty} — only ${assignment.quantity} available` });
+    if (moveQty > totalQty) {
+      res.status(400).json({ error: `Cannot move ${moveQty} — only ${totalQty} available` });
       await client.query('ROLLBACK');
       return;
     }
 
-    // Check new slot capacity
-    const newSlotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1', [to_shelf_slot_id]);
-    if (newSlotResult.rows.length === 0) {
-      res.status(404).json({ error: 'Target shelf slot not found' });
-      await client.query('ROLLBACK');
-      return;
-    }
-
-    const newSlot = newSlotResult.rows[0];
-    if (newSlot.current_count >= newSlot.capacity) {
-      res.status(400).json({ error: 'Target shelf slot is full' });
-      await client.query('ROLLBACK');
-      return;
-    }
-
-    // Get new location info
-    const newLocResult = await client.query(`
-      SELECT z.code AS zone_code, r.code AS rack_code, ss.shelf_number
-      FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id JOIN zones z ON r.zone_id = z.id
-      WHERE ss.id = $1
-    `, [to_shelf_slot_id]);
-    const newLoc = newLocResult.rows[0];
-
-    const fromStr = `${assignment.old_zone_code}/${assignment.old_rack_code.replace(/^[A-Z]-/, '')}/S${assignment.old_shelf_number}`;
-    const toStr = `${newLoc.zone_code}/${newLoc.rack_code.replace(/^[A-Z]-/, '')}/S${newLoc.shelf_number}`;
-
-    const isPartial = moveQty < assignment.quantity;
+    const isPartial = moveQty < totalQty;
+    let toStr: string;
     let newAssignmentId = assignment_id;
 
-    if (isPartial) {
-      // Partial move: reduce original assignment quantity, create new assignment at target
-      await client.query(
-        'UPDATE storage_assignments SET quantity = quantity - $1 WHERE id = $2',
-        [moveQty, assignment_id]
-      );
+    if (to_machine_id) {
+      // --- Destination is a machine ---
+      const machineResult = await client.query('SELECT * FROM machines WHERE id = $1', [to_machine_id]);
+      if (machineResult.rows.length === 0) {
+        res.status(404).json({ error: 'Target machine not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+      const targetMachine = machineResult.rows[0];
+      toStr = `M/${targetMachine.code}`;
 
+      // Reduce/remove source
+      if (source_type === 'machine') {
+        if (isPartial) {
+          await client.query('UPDATE machine_assignments SET quantity = quantity - $1 WHERE id = $2', [moveQty, assignment_id]);
+        } else {
+          await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, assignment_id]);
+        }
+      } else {
+        if (isPartial) {
+          await client.query('UPDATE storage_assignments SET quantity = quantity - $1 WHERE id = $2', [moveQty, assignment_id]);
+        } else {
+          await client.query('UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1 WHERE id = $2', [performed_by, assignment_id]);
+          await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1', [assignment.old_slot_id]);
+        }
+      }
+
+      // Create machine assignment at target
       newAssignmentId = uuidv4();
       await client.query(
-        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_in_by, notes)
+        `INSERT INTO machine_assignments (id, item_id, machine_id, quantity, assigned_at, assigned_by, notes)
          VALUES ($1, $2, $3, $4, NOW(), $5, $6)`,
-        [newAssignmentId, assignment.item_id, to_shelf_slot_id, moveQty, performed_by, notes || null]
-      );
-
-      // Only increment target slot count (original slot keeps its assignment)
-      await client.query(
-        'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
-        [to_shelf_slot_id]
+        [newAssignmentId, itemId, to_machine_id, moveQty, performed_by, notes || null]
       );
     } else {
-      // Full move: update assignment to new slot
-      await client.query(
-        'UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2',
-        [to_shelf_slot_id, assignment_id]
-      );
+      // --- Destination is a shelf ---
+      const newSlotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1', [to_shelf_slot_id]);
+      if (newSlotResult.rows.length === 0) {
+        res.status(404).json({ error: 'Target shelf slot not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+      const newSlot = newSlotResult.rows[0];
+      if (newSlot.current_count >= newSlot.capacity) {
+        res.status(400).json({ error: 'Target shelf slot is full' });
+        await client.query('ROLLBACK');
+        return;
+      }
 
-      // Update old slot count down
-      await client.query(
-        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
-        [assignment.old_slot_id]
-      );
+      const newLocResult = await client.query(`
+        SELECT z.code AS zone_code, r.code AS rack_code, ss.shelf_number
+        FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id JOIN zones z ON r.zone_id = z.id
+        WHERE ss.id = $1
+      `, [to_shelf_slot_id]);
+      const newLoc = newLocResult.rows[0];
+      toStr = `${newLoc.zone_code}/${newLoc.rack_code.replace(/^[A-Z]-/, '')}/S${newLoc.shelf_number}`;
 
-      // Update new slot count up
-      await client.query(
-        'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
-        [to_shelf_slot_id]
-      );
+      // Reduce/remove source
+      if (source_type === 'machine') {
+        if (isPartial) {
+          await client.query('UPDATE machine_assignments SET quantity = quantity - $1 WHERE id = $2', [moveQty, assignment_id]);
+        } else {
+          await client.query('UPDATE machine_assignments SET removed_at = NOW(), removed_by = $1 WHERE id = $2', [performed_by, assignment_id]);
+        }
+      } else {
+        if (isPartial) {
+          await client.query('UPDATE storage_assignments SET quantity = quantity - $1 WHERE id = $2', [moveQty, assignment_id]);
+        } else {
+          await client.query('UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2', [to_shelf_slot_id, assignment_id]);
+          await client.query('UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1', [assignment.old_slot_id]);
+        }
+      }
+
+      // Create/update shelf assignment at target (for machine→shelf or partial shelf→shelf)
+      if (source_type === 'machine' || isPartial) {
+        newAssignmentId = uuidv4();
+        await client.query(
+          `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_in_by, notes)
+           VALUES ($1, $2, $3, $4, NOW(), $5, $6)`,
+          [newAssignmentId, itemId, to_shelf_slot_id, moveQty, performed_by, notes || null]
+        );
+        await client.query('UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1', [to_shelf_slot_id]);
+      } else {
+        // Full shelf→shelf: already moved the assignment above, just update target count
+        await client.query('UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1', [to_shelf_slot_id]);
+      }
     }
 
     // Log activity
     const noteText = isPartial
-      ? `Moved ${moveQty} of ${assignment.quantity}${notes ? '. ' + notes : ''}`
+      ? `Moved ${moveQty} of ${totalQty}${notes ? '. ' + notes : ''}`
       : (notes || null);
 
     await client.query(
       `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
        VALUES ($1, $2, 'move', $3, $4, $5, $6)`,
-      [uuidv4(), assignment.item_id, fromStr, toStr, performed_by, noteText]
+      [uuidv4(), itemId, fromStr, toStr, performed_by, noteText]
     );
 
     await client.query('COMMIT');
 
     res.json({
-      data: { assignment_id: newAssignmentId, from: fromStr, to: toStr, quantity_moved: moveQty, quantity_remaining: assignment.quantity - moveQty },
+      data: { assignment_id: newAssignmentId, from: fromStr, to: toStr, quantity_moved: moveQty, quantity_remaining: totalQty - moveQty },
     });
   } catch (err) {
     await client.query('ROLLBACK');

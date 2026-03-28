@@ -1,5 +1,6 @@
 'use client';
 
+import Box from '@mui/material/Box';
 import { Input } from '@/components/ui/Input';
 
 interface MapSearchProps {
@@ -9,14 +10,14 @@ interface MapSearchProps {
 
 export function MapSearch({ value, onChange }: MapSearchProps) {
   return (
-    <div className="min-w-[280px] flex-1">
+    <Box sx={{ minWidth: 280, flex: 1 }}>
       <Input
         id="map-search"
         label="Quick search"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange((event.target as HTMLInputElement).value)}
         placeholder="Find item code, item name, or customer"
       />
-    </div>
+    </Box>
   );
 }

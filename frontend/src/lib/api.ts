@@ -12,6 +12,7 @@ import type {
   ItemFilters,
   ItemWithLocation,
   LocationSuggestion,
+  MachineWithItemCount,
   MoveRequest,
   RackWithShelves,
   UpdateItemRequest,
@@ -121,6 +122,10 @@ export const api = {
   getRack: (id: string) => request<ApiResponse<RackWithShelves>>(`/racks/${id}`),
 
   getCustomers: () => request<ApiResponse<Customer[]>>('/customers'),
+
+  getMachines: () => request<ApiResponse<MachineWithItemCount[]>>('/machines'),
+
+  getMachine: (id: string) => request<ApiResponse<MachineWithItemCount & { items: Array<{ assignment_id: string; item_id: string; item_code: string; item_name: string; customer_name: string | null; quantity: number; assigned_at: string; assigned_by: string; material: string; notes: string | null }> }>>(`/machines/${id}`),
 
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 

@@ -1,7 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button } from '@/components/ui/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import MuiButton from '@mui/material/Button';
+import FilterListOffIcon from '@mui/icons-material/FilterListOff';
 
 type FilterBarProps = {
   children: ReactNode;
@@ -10,11 +13,15 @@ type FilterBarProps = {
 
 export function FilterBar({ children, onClear }: FilterBarProps) {
   return (
-    <div className="app-frame flex flex-col gap-2 p-3 lg:flex-row lg:items-end lg:justify-between">
-      <div className="grid flex-1 gap-2 md:grid-cols-2 xl:grid-cols-4">{children}</div>
-      <Button variant="secondary" className="shrink-0 lg:self-end" onClick={onClear}>
-        Clear filters
-      </Button>
-    </div>
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} alignItems={{ lg: 'flex-end' }}>
+        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap flex={1} sx={{ '& > *': { minWidth: 160, flex: '1 1 180px' } }}>
+          {children}
+        </Stack>
+        <MuiButton variant="text" size="small" startIcon={<FilterListOffIcon />} onClick={onClear} sx={{ flexShrink: 0 }}>
+          Clear filters
+        </MuiButton>
+      </Stack>
+    </Paper>
   );
 }
