@@ -35,6 +35,7 @@ export default function ItemDetailPage() {
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [moveNotes, setMoveNotes] = useState('');
+  const [moveQuantity, setMoveQuantity] = useState(1);
   const [moveOpen, setMoveOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -90,18 +91,22 @@ export default function ItemDetailPage() {
 
     setSubmitting(true);
     try {
+      const totalQty = item.current_location.quantity ?? 1;
       const response = await api.moveItem({
         assignment_id: item.current_location.assignment_id,
         to_shelf_slot_id: selectedSlotId,
         performed_by: workerName,
         notes: moveNotes || undefined,
+        quantity: moveQuantity,
       });
       const refreshed = await api.getItem(params.id);
       setItem(refreshed.data);
       setMoveOpen(false);
       setSelectedSlotId('');
       setMoveNotes('');
-      showToast(`Item moved to ${response.data.to}`);
+      setMoveQuantity(refreshed.data.current_location?.quantity ?? 1);
+      const label = moveQuantity < totalQty ? `${moveQuantity} of ${totalQty} moved to ${response.data.to}` : `Item moved to ${response.data.to}`;
+      showToast(label);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Move failed', 'error');
     } finally {
@@ -144,7 +149,7 @@ export default function ItemDetailPage() {
               </Link>
             ) : null}
             {item.current_location?.assignment_id ? (
-              <Button variant="secondary" onClick={() => setMoveOpen(true)}>
+              <Button variant="secondary" onClick={() => { setMoveQuantity(item.current_location?.quantity ?? 1); setMoveOpen(true); }}>
                 Move
               </Button>
             ) : null}
@@ -197,7 +202,7 @@ export default function ItemDetailPage() {
                   </div>
                   <p className="mt-1 text-[13px] font-medium text-app-text">{entry.performed_by}</p>
                   <p className="mt-0.5 text-[12px] text-app-textMuted">
-                    {entry.action === 'move' ? `${entry.from_location || '-'} -> ${entry.to_location || '-'}` : entry.to_location || entry.from_location || '-'}
+                    {entry.action === 'move' ? `${entry.from_location || '-'} \u2192 ${entry.to_location || '-'}` : entry.to_location || entry.from_location || '-'}
                   </p>
                   {entry.notes ? <p className="mt-1 text-[13px] text-app-text">{entry.notes}</p> : null}
                 </div>
@@ -211,8 +216,16 @@ export default function ItemDetailPage() {
         <div className="space-y-3">
           <div className="app-inset px-3 py-2 text-[13px] text-app-text">
             <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Current location</div>
-            <div className="mt-1">{locationLabel(item.current_location)}</div>
+            <div className="mt-1">{locationLabel(item.current_location)} — {item.current_location?.quantity ?? 1} in storage</div>
           </div>
+          {(item.current_location?.quantity ?? 1) > 1 ? (
+            <Input
+              label={`Quantity to move (max ${item.current_location?.quantity ?? 1} at this shelf)`}
+              type="number"
+              value={String(moveQuantity)}
+              onChange={(event) => setMoveQuantity(Math.max(1, Math.min(item.current_location?.quantity ?? 1, Number(event.target.value) || 1)))}
+            />
+          ) : null}
           <Select
             label="Destination zone"
             value={selectedZoneId}

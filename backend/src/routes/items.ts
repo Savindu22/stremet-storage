@@ -127,7 +127,8 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
           'shelf_number', ss.shelf_number,
           'shelf_slot_id', ss.id,
           'assignment_id', latest_sa.id,
-          'checked_in_at', latest_sa.checked_in_at
+          'checked_in_at', latest_sa.checked_in_at,
+          'quantity', latest_sa.quantity
         )
       ELSE NULL END AS current_location
     ${fromClause}
@@ -284,7 +285,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
   // Current location
   const locationResult = await pool.query(`
-    SELECT sa.id AS assignment_id, sa.checked_in_at, sa.checked_in_by,
+    SELECT sa.id AS assignment_id, sa.checked_in_at, sa.checked_in_by, sa.quantity,
       ss.id AS shelf_slot_id, ss.shelf_number,
       r.code AS rack_code,
       z.name AS zone_name, z.code AS zone_code
@@ -456,7 +457,7 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
       WHERE ss.id = $1
     `, [shelf_slot_id]);
     const loc = locResult.rows[0];
-    const locationStr = `Zone ${loc.zone_code} > ${loc.rack_code} > Shelf ${loc.shelf_number}`;
+    const locationStr = `${loc.zone_code}/${loc.rack_code.replace(/^[A-Z]-/, '')}/S${loc.shelf_number}`;
 
     // Log activity
     await client.query(
@@ -510,7 +511,7 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
     }
 
     const assignment = assignmentResult.rows[0];
-    const locationStr = `Zone ${assignment.zone_code} > ${assignment.rack_code} > Shelf ${assignment.shelf_number}`;
+    const locationStr = `${assignment.zone_code}/${assignment.rack_code.replace(/^[A-Z]-/, '')}/S${assignment.shelf_number}`;
 
     // Update assignment
     await client.query(
@@ -544,9 +545,9 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
   }
 }));
 
-// POST /api/items/move — move item between locations
+// POST /api/items/move — move item between locations (supports partial quantity)
 itemsRouter.post('/move', asyncHandler(async (req, res) => {
-  const { assignment_id, to_shelf_slot_id, performed_by, notes } = req.body;
+  const { assignment_id, to_shelf_slot_id, performed_by, notes, quantity } = req.body;
 
   if (!assignment_id || !to_shelf_slot_id || !performed_by) {
     res.status(400).json({ error: 'assignment_id, to_shelf_slot_id, and performed_by are required' });
@@ -574,6 +575,19 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     }
 
     const assignment = assignmentResult.rows[0];
+    const moveQty = quantity != null ? Number(quantity) : assignment.quantity;
+
+    if (moveQty <= 0 || !Number.isInteger(moveQty)) {
+      res.status(400).json({ error: 'Quantity must be a positive integer' });
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    if (moveQty > assignment.quantity) {
+      res.status(400).json({ error: `Cannot move ${moveQty} — only ${assignment.quantity} available` });
+      await client.query('ROLLBACK');
+      return;
+    }
 
     // Check new slot capacity
     const newSlotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1', [to_shelf_slot_id]);
@@ -598,38 +612,66 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     `, [to_shelf_slot_id]);
     const newLoc = newLocResult.rows[0];
 
-    const fromStr = `Zone ${assignment.old_zone_code} > ${assignment.old_rack_code} > Shelf ${assignment.old_shelf_number}`;
-    const toStr = `Zone ${newLoc.zone_code} > ${newLoc.rack_code} > Shelf ${newLoc.shelf_number}`;
+    const fromStr = `${assignment.old_zone_code}/${assignment.old_rack_code.replace(/^[A-Z]-/, '')}/S${assignment.old_shelf_number}`;
+    const toStr = `${newLoc.zone_code}/${newLoc.rack_code.replace(/^[A-Z]-/, '')}/S${newLoc.shelf_number}`;
 
-    // Update assignment to new slot
-    await client.query(
-      'UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2',
-      [to_shelf_slot_id, assignment_id]
-    );
+    const isPartial = moveQty < assignment.quantity;
+    let newAssignmentId = assignment_id;
 
-    // Update old slot count down
-    await client.query(
-      'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
-      [assignment.old_slot_id]
-    );
+    if (isPartial) {
+      // Partial move: reduce original assignment quantity, create new assignment at target
+      await client.query(
+        'UPDATE storage_assignments SET quantity = quantity - $1 WHERE id = $2',
+        [moveQty, assignment_id]
+      );
 
-    // Update new slot count up
-    await client.query(
-      'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
-      [to_shelf_slot_id]
-    );
+      newAssignmentId = uuidv4();
+      await client.query(
+        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_in_by, notes)
+         VALUES ($1, $2, $3, $4, NOW(), $5, $6)`,
+        [newAssignmentId, assignment.item_id, to_shelf_slot_id, moveQty, performed_by, notes || null]
+      );
+
+      // Only increment target slot count (original slot keeps its assignment)
+      await client.query(
+        'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
+        [to_shelf_slot_id]
+      );
+    } else {
+      // Full move: update assignment to new slot
+      await client.query(
+        'UPDATE storage_assignments SET shelf_slot_id = $1 WHERE id = $2',
+        [to_shelf_slot_id, assignment_id]
+      );
+
+      // Update old slot count down
+      await client.query(
+        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
+        [assignment.old_slot_id]
+      );
+
+      // Update new slot count up
+      await client.query(
+        'UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1',
+        [to_shelf_slot_id]
+      );
+    }
 
     // Log activity
+    const noteText = isPartial
+      ? `Moved ${moveQty} of ${assignment.quantity}${notes ? '. ' + notes : ''}`
+      : (notes || null);
+
     await client.query(
       `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
        VALUES ($1, $2, 'move', $3, $4, $5, $6)`,
-      [uuidv4(), assignment.item_id, fromStr, toStr, performed_by, notes || null]
+      [uuidv4(), assignment.item_id, fromStr, toStr, performed_by, noteText]
     );
 
     await client.query('COMMIT');
 
     res.json({
-      data: { assignment_id, from: fromStr, to: toStr },
+      data: { assignment_id: newAssignmentId, from: fromStr, to: toStr, quantity_moved: moveQty, quantity_remaining: assignment.quantity - moveQty },
     });
   } catch (err) {
     await client.query('ROLLBACK');

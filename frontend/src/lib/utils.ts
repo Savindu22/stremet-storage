@@ -38,8 +38,9 @@ export function locationLabel(location?: LocationInput | null) {
     return 'Not in storage';
   }
 
-  const zone = location.zone_name || (location.zone_code ? `Zone ${location.zone_code}` : 'Unknown zone');
-  return `${zone} > ${location.rack_code} > Shelf ${location.shelf_number}`;
+  const zone = location.zone_code || '?';
+  const rack = location.rack_code?.replace(/^[A-Z]-/, '') || '?';
+  return `${zone}/${rack}/S${location.shelf_number}`;
 }
 
 export function buildQueryString(params: object) {

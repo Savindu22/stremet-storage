@@ -18,7 +18,7 @@ function randomDate(daysAgo: number): Date {
 }
 
 function formatLocation(zoneCode: string, rackNum: number, shelfNum: number): string {
-  return `Zone ${zoneCode} > Rack ${zoneCode}-R${rackNum} > Shelf ${shelfNum}`;
+  return `${zoneCode}/R${rackNum}/S${shelfNum}`;
 }
 
 // --- Static Data ---

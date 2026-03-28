@@ -149,6 +149,7 @@ export interface ItemWithLocation extends Item {
     shelf_slot_id: string;
     assignment_id: string;
     checked_in_at: string;
+    quantity: number;
   } | null;
 }
 
@@ -215,6 +216,7 @@ export interface MoveRequest {
   to_shelf_slot_id: string;
   performed_by: string;
   notes?: string;
+  quantity?: number;
 }
 
 export interface CreateItemRequest {
