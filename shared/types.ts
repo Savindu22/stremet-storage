@@ -394,6 +394,55 @@ export interface CreateItemRequest {
   quantity: number;
 }
 
+// --- Assistant ---
+
+export type ActionProposal =
+  | {
+      action: 'check_in';
+      item_id: string;
+      item_code: string;
+      shelf_slot_id: string;
+      location: string;
+      quantity: number;
+      notes?: string;
+    }
+  | {
+      action: 'check_out';
+      assignment_id: string;
+      unit_code: string;
+      source_type: 'shelf' | 'machine';
+      location: string;
+      item_code: string;
+      notes?: string;
+    }
+  | {
+      action: 'move';
+      assignment_id: string;
+      unit_code: string;
+      source_type: 'shelf' | 'machine';
+      from: string;
+      to: string;
+      to_shelf_slot_id?: string;
+      to_machine_id?: string;
+      quantity?: number;
+      notes?: string;
+    };
+
+export interface AssistantRequest {
+  message: string;
+  imageBase64?: string;
+  history: { role: 'user' | 'assistant'; content: string }[];
+  workerName?: string;
+}
+
+export interface AssistantResponse {
+  message: string;
+  sql?: string;
+  data?: Record<string, unknown>[];
+  rowCount?: number;
+  action?: ActionProposal;
+}
+
 export interface UpdateItemRequest {
   name?: string;
   description?: string;
