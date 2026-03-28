@@ -188,6 +188,7 @@ async function seed(): Promise<void> {
       customerCode: string | null;
       type: string;
       name: string;
+      weight_kg: number | null;
     }
     const items: ItemRecord[] = [];
 
@@ -196,7 +197,7 @@ async function seed(): Promise<void> {
         const id = uuidv4();
         const material = randomChoice(MATERIALS);
         const itemCode = `RAW-${String(i+1).padStart(3, '0')}`;
-        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'raw_material', name: `${material} Sheet` });
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'raw_material', name: `${material} Sheet`, weight_kg: randomInt(20, 100) });
         await client.query(
             `INSERT INTO items (id, item_code, name, material, weight_kg, type, quantity)
              VALUES ($1, $2, $3, $4, $5, 'raw_material', $6)`,
@@ -208,7 +209,7 @@ async function seed(): Promise<void> {
     for (let i = 0; i < 40; i++) {
         const id = uuidv4();
         const itemCode = `WIP-${String(i+1).padStart(3, '0')}`;
-        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'work_in_progress', name: `Interim Part ${i+1}` });
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'work_in_progress', name: `Interim Part ${i+1}`, weight_kg: randomInt(5, 30) });
         await client.query(
             `INSERT INTO items (id, item_code, name, type, weight_kg, quantity)
              VALUES ($1, $2, $3, 'work_in_progress', $4, $5)`,
@@ -238,7 +239,7 @@ async function seed(): Promise<void> {
         const deliveryDate = new Date();
         deliveryDate.setDate(deliveryDate.getDate() + randomInt(1, 30));
 
-        items.push({ id, code: itemCode, customerId: customerIds[cust.code], customerCode: cust.code, type: 'customer_order', name });
+        items.push({ id, code: itemCode, customerId: customerIds[cust.code], customerCode: cust.code, type: 'customer_order', name, weight_kg: null });
         await client.query(
           `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -278,7 +279,7 @@ async function seed(): Promise<void> {
       const dimensions = `${w}x${h}x${thickness}mm`;
       const weightKg = parseFloat(((w * h * thickness * 0.0000079).toFixed(2)));
 
-      items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'general_stock', name: stockParts[i] });
+      items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'general_stock', name: stockParts[i], weight_kg: null });
       await client.query(
         `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity)
          VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, NULL, $9)`,
