@@ -315,7 +315,7 @@ async function seed(): Promise<void> {
         [slot.id]
       );
 
-      const location = formatLocation(slot.zoneCode, slot.rackNum, slot.shelfNum);
+      const location = formatLocation(slot.zoneCode, slot.rackNum, slot.rowNum);
       activityEntries.push({
         itemId: item.id,
         action: 'check_in',
@@ -354,7 +354,7 @@ async function seed(): Promise<void> {
         [uuidv4(), item.id, slot.id, unitCode, qty, checkedInAt, checkedOutAt, workerIn, workerOut, randomChoice([null, 'Shipped to customer', 'Moved to production', 'Quality check', 'Returned to supplier'])]
       );
 
-      const locationIn = formatLocation(slot.zoneCode, slot.rackNum, slot.shelfNum);
+      const locationIn = formatLocation(slot.zoneCode, slot.rackNum, slot.rowNum);
       activityEntries.push({
         itemId: item.id,
         action: 'check_in',
