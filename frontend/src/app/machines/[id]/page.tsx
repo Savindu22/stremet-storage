@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
-import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
@@ -17,36 +15,27 @@ import Typography from '@mui/material/Typography';
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined';
 import ScheduleIcon from '@mui/icons-material/ScheduleOutlined';
-import CheckCircleIcon from '@mui/icons-material/CheckCircleOutlined';
 import WarningIcon from '@mui/icons-material/WarningAmberOutlined';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUncheckedOutlined';
 import type {
-  CompleteProductionJobRequest,
-  ItemDetail,
   ItemWithLocation,
   MachineDetail,
   MachineDetailItem,
   MachineWithItemCount,
-  ProductionJobDetail,
-  ProductionJobSummary,
-  RackWithShelves,
   RackWithStats,
-  TrackingUnit,
+  RackWithShelves,
 } from '@shared/types';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Input } from '@/components/ui/Input';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { LocationBadge } from '@/components/ui/LocationBadge';
-import { Modal } from '@/components/ui/Modal';
-import { Select } from '@/components/ui/Select';
-import { useToast } from '@/components/ui/Toast';
-import { useDebouncedValue } from '@/lib/hooks';
 import { api } from '@/lib/api';
-import { formatDateTime, machineAssignmentStatusLabel, machineCategoryLabel } from '@/lib/utils';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/components/ui/Toast';
+import { useWorkerSession } from '@/components/ui/WorkerSession';
+import { formatDateTime } from '@/lib/utils';
 
-const categoryColors: Record<string, 'primary' | 'secondary' | 'warning' | 'error' | 'success'> = {
+const CATEGORY_COLORS: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'success'> = {
   sheet_metal: 'secondary',
   cutting: 'error',
   laser: 'primary',
@@ -54,1357 +43,460 @@ const categoryColors: Record<string, 'primary' | 'secondary' | 'warning' | 'erro
   bending: 'success',
 };
 
-const MACHINE_STATUS_OPTIONS = [
-  { value: 'queued', label: 'Queued' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'needs_attention', label: 'Needs attention' },
-  { value: 'ready_for_storage', label: 'Ready for storage' },
-] as const;
-
-function machineStatusVariant(status: string): 'default' | 'primary' | 'success' | 'warning' | 'danger' {
-  if (status === 'processing') return 'primary';
-  if (status === 'ready_for_storage') return 'success';
-  if (status === 'needs_attention') return 'danger';
-  return 'default';
-}
-
-function daysSince(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
-}
-
 export default function MachineDetailPage() {
-  const params = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
+  const { workerName } = useWorkerSession();
+
   const [machine, setMachine] = useState<MachineDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Import modal state
   const [importOpen, setImportOpen] = useState(false);
-  const [importQuery, setImportQuery] = useState('');
+  const [importSearch, setImportSearch] = useState('');
   const [importResults, setImportResults] = useState<ItemWithLocation[]>([]);
-  const [importSearchLoading, setImportSearchLoading] = useState(false);
-  const [selectedImportItem, setSelectedImportItem] = useState<ItemWithLocation | null>(null);
-  const [selectedImportItemDetail, setSelectedImportItemDetail] = useState<ItemDetail | null>(null);
-  const [selectedImportUnit, setSelectedImportUnit] = useState<TrackingUnit | null>(null);
-  const [importItemLoading, setImportItemLoading] = useState(false);
-  const [importQuantity, setImportQuantity] = useState(1);
-  const [importWorkerName, setImportWorkerName] = useState('');
+  const [importSearching, setImportSearching] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ItemWithLocation | null>(null);
+  const [selectedUnit, setSelectedUnit] = useState<{ assignment_id: string; unit_code: string; quantity: number; source_type: string } | null>(null);
+  const [importUnits, setImportUnits] = useState<Array<{ assignment_id: string; unit_code: string; quantity: number; source_type: string }>>([]);
+  const [importUnitsLoading, setImportUnitsLoading] = useState(false);
+  const [importQty, setImportQty] = useState(1);
   const [importNotes, setImportNotes] = useState('');
-  const [importSubmitting, setImportSubmitting] = useState(false);
+
+  // Move modal state
   const [moveOpen, setMoveOpen] = useState(false);
-  const [moveUnit, setMoveUnit] = useState<MachineDetailItem | null>(null);
-  const [moveDestinationType, setMoveDestinationType] = useState<'shelf' | 'machine'>('shelf');
-  const [racks, setRacks] = useState<RackWithStats[]>([]);
-  const [moveRackId, setMoveRackId] = useState('');
+  const [moveItem, setMoveItem] = useState<MachineDetailItem | null>(null);
+  const [moveDestType, setMoveDestType] = useState<'storage' | 'machine'>('storage');
+  const [moveRacks, setMoveRacks] = useState<RackWithStats[]>([]);
+  const [moveSelectedRack, setMoveSelectedRack] = useState('');
   const [moveRackDetail, setMoveRackDetail] = useState<RackWithShelves | null>(null);
-  const [moveShelfSlotId, setMoveShelfSlotId] = useState('');
-  const [machines, setMachines] = useState<MachineWithItemCount[]>([]);
-  const [moveMachineId, setMoveMachineId] = useState('');
-  const [moveQuantity, setMoveQuantity] = useState(1);
-  const [moveWorkerName, setMoveWorkerName] = useState('');
+  const [moveSelectedSlot, setMoveSelectedSlot] = useState('');
+  const [moveMachines, setMoveMachines] = useState<MachineWithItemCount[]>([]);
+  const [moveSelectedMachine, setMoveSelectedMachine] = useState('');
+  const [moveQty, setMoveQty] = useState(1);
   const [moveNotes, setMoveNotes] = useState('');
-  const [moveSubmitting, setMoveSubmitting] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [statusUnit, setStatusUnit] = useState<MachineDetailItem | null>(null);
-  const [nextStatus, setNextStatus] = useState('processing');
-  const [statusWorkerName, setStatusWorkerName] = useState('');
-  const [statusNotes, setStatusNotes] = useState('');
-  const [statusSubmitting, setStatusSubmitting] = useState(false);
-  const [createJobOpen, setCreateJobOpen] = useState(false);
-  const [selectedJobInputIds, setSelectedJobInputIds] = useState<string[]>([]);
-  const [createJobWorkerName, setCreateJobWorkerName] = useState('');
-  const [createJobNotes, setCreateJobNotes] = useState('');
-  const [createJobSubmitting, setCreateJobSubmitting] = useState(false);
-  const [jobOpen, setJobOpen] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<ProductionJobSummary | null>(null);
-  const [jobDetail, setJobDetail] = useState<ProductionJobDetail | null>(null);
-  const [jobLoading, setJobLoading] = useState(false);
-  const [jobActionWorkerName, setJobActionWorkerName] = useState('');
-  const [jobActionNotes, setJobActionNotes] = useState('');
-  const [jobSubmitting, setJobSubmitting] = useState(false);
-  const [outputCatalog, setOutputCatalog] = useState<Array<{ id: string; label: string }>>([]);
-  const [jobRackId, setJobRackId] = useState('');
-  const [jobRackDetail, setJobRackDetail] = useState<RackWithShelves | null>(null);
-  const [jobOutputRows, setJobOutputRows] = useState<Array<{
-    key: string;
-    item_id: string;
-    quantity: number;
-    outcome: 'good' | 'scrap' | 'rework' | 'hold';
-    destination_type: 'storage' | 'machine' | 'none';
-    shelf_slot_id: string;
-    machine_id: string;
-    notes: string;
-  }>>([]);
-  const debouncedImportQuery = useDebouncedValue(importQuery, 250);
 
-  const importableUnits = useMemo(
-    () => selectedImportItemDetail?.tracking_units.filter((unit) => unit.source_type === 'shelf') || [],
-    [selectedImportItemDetail],
-  );
-
-  const canImportUnit = Boolean(selectedImportUnit && importWorkerName.trim() && !importSubmitting);
-  const availableMoveShelves = useMemo(
-    () =>
-      moveRackDetail?.shelves
-        .filter((cell) => cell.current_count < cell.capacity)
-        .map((cell) => ({ value: cell.id, label: `${moveRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
-    [moveRackDetail],
-  );
-  const canSubmitMove = Boolean(
-    moveUnit &&
-    moveWorkerName.trim() &&
-    moveQuantity >= 1 &&
-    moveQuantity <= (moveUnit?.quantity || 0) &&
-    ((moveDestinationType === 'shelf' && moveShelfSlotId) || (moveDestinationType === 'machine' && moveMachineId)),
-  ) && !moveSubmitting;
-  const canSubmitStatus = Boolean(statusUnit && statusWorkerName.trim() && nextStatus) && !statusSubmitting;
-  const canCreateJob = selectedJobInputIds.length > 0 && createJobWorkerName.trim().length > 0 && !createJobSubmitting;
-  const canStartJob = Boolean(selectedJob && selectedJob.status === 'draft' && jobActionWorkerName.trim() && !jobSubmitting);
-  const canCompleteJob = Boolean(
-    selectedJob &&
-      jobDetail &&
-      jobActionWorkerName.trim() &&
-      jobOutputRows.length > 0 &&
-      jobOutputRows.every(
-        (row) =>
-          row.item_id &&
-          row.quantity > 0 &&
-          ((row.outcome === 'good' || row.outcome === 'rework' || row.outcome === 'hold') ? row.destination_type !== 'none' : true) &&
-          (row.destination_type !== 'storage' || Boolean(row.shelf_slot_id)) &&
-          (row.destination_type !== 'machine' || Boolean(row.machine_id)),
-      ) &&
-      !jobSubmitting,
-  );
-  const availableJobShelves = useMemo(
-    () => jobRackDetail?.shelves
-      .filter((cell) => cell.current_count < cell.capacity)
-      .map((cell) => ({ value: cell.id, label: `${jobRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
-    [jobRackDetail],
-  );
+  const refreshMachine = async () => {
+    try {
+      const res = await api.getMachine(id);
+      setMachine(res.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load');
+    }
+  };
 
   useEffect(() => {
-    if (!params.id) return;
+    let active = true;
     setLoading(true);
-    void api.getMachine(params.id)
-      .then((r) => setMachine(r.data))
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [params.id]);
-
-  useEffect(() => {
-    if (!moveOpen) {
-      return;
-    }
-
-    void Promise.all([api.getRacks(), api.getMachines()]).then(([racksResponse, machinesResponse]) => {
-      setRacks(racksResponse.data);
-      setMachines(machinesResponse.data.filter((entry) => entry.id !== params.id));
+    api.getMachine(id).then(res => {
+      if (active) { setMachine(res.data); setLoading(false); }
+    }).catch(err => {
+      if (active) { setError(err instanceof Error ? err.message : 'Failed to load'); setLoading(false); }
     });
-  }, [moveOpen, params.id]);
+    return () => { active = false; };
+  }, [id]);
 
+  // Import search
   useEffect(() => {
-    if (!jobOpen) {
-      return;
-    }
+    if (!importOpen || importSearch.length < 2) { setImportResults([]); return; }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setImportSearching(true);
+      try {
+        const res = await api.getItems({ search: importSearch, in_storage: true, per_page: 12 });
+        if (active) setImportResults(res.data);
+      } catch { /* ignore */ }
+      if (active) setImportSearching(false);
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [importSearch, importOpen]);
 
-    void Promise.all([
-      api.getRacks(),
-      api.getMachines(),
-      api.getItems({ page: 1, per_page: 100, sort_by: 'item_code', sort_order: 'asc' }),
-      api.getItems({ page: 2, per_page: 100, sort_by: 'item_code', sort_order: 'asc' }),
-    ]).then(([racksResponse, machinesResponse, firstItems, secondItems]) => {
-      setRacks(racksResponse.data);
-      setMachines(machinesResponse.data.filter((entry) => entry.id !== params.id));
-      const combined = [...firstItems.data, ...secondItems.data];
-      const deduped = new Map(combined.map((item) => [item.id, item]));
-      setOutputCatalog(Array.from(deduped.values()).map((item) => ({ id: item.id, label: `${item.item_code} - ${item.name}` })));
-    });
-  }, [jobOpen, params.id]);
-
+  // Load units for selected import item
   useEffect(() => {
-    if (!jobOpen || !jobRackId) {
-      setJobRackDetail(null);
-      return;
-    }
+    if (!selectedItem) { setImportUnits([]); setSelectedUnit(null); return; }
+    let active = true;
+    setImportUnitsLoading(true);
+    api.getItem(selectedItem.id).then(res => {
+      if (!active) return;
+      const units = res.data.tracking_units
+        .filter((u: { source_type: string }) => u.source_type === 'shelf')
+        .map((u: { assignment_id: string; unit_code: string; quantity: number; source_type: string }) => ({
+          assignment_id: u.assignment_id,
+          unit_code: u.unit_code,
+          quantity: u.quantity,
+          source_type: u.source_type,
+        }));
+      setImportUnits(units);
+      if (units.length === 1) { setSelectedUnit(units[0]); setImportQty(units[0].quantity); }
+      else { setSelectedUnit(null); setImportQty(1); }
+      setImportUnitsLoading(false);
+    }).catch(() => { if (active) setImportUnitsLoading(false); });
+    return () => { active = false; };
+  }, [selectedItem]);
 
-    void api.getRack(jobRackId).then((response) => setJobRackDetail(response.data));
-  }, [jobOpen, jobRackId]);
-
+  // Load racks for move modal
   useEffect(() => {
-    if (!moveOpen || moveDestinationType !== 'shelf' || !moveRackId) {
-      setMoveRackDetail(null);
-      return;
-    }
+    if (!moveOpen) return;
+    api.getRacks().then(res => setMoveRacks(res.data)).catch(() => {});
+    api.getMachines().then(res => setMoveMachines(res.data)).catch(() => {});
+  }, [moveOpen]);
 
-    void api.getRack(moveRackId).then((response) => setMoveRackDetail(response.data));
-  }, [moveDestinationType, moveOpen, moveRackId]);
-
+  // Load rack detail when selected
   useEffect(() => {
-    if (!importOpen || !debouncedImportQuery.trim()) {
-      setImportResults([]);
-      return;
-    }
+    if (!moveSelectedRack) { setMoveRackDetail(null); return; }
+    api.getRack(moveSelectedRack).then(res => setMoveRackDetail(res.data)).catch(() => {});
+  }, [moveSelectedRack]);
 
-    setImportSearchLoading(true);
-    void api
-      .getItems({ search: debouncedImportQuery.trim(), in_storage: true, page: 1, per_page: 12 })
-      .then((response) => setImportResults(response.data))
-      .catch(() => setImportResults([]))
-      .finally(() => setImportSearchLoading(false));
-  }, [debouncedImportQuery, importOpen]);
-
-  useEffect(() => {
-    if (!importOpen) {
-      return;
-    }
-
-    if (selectedImportUnit && !importableUnits.some((unit) => unit.assignment_id === selectedImportUnit.assignment_id)) {
-      setSelectedImportUnit(null);
-      setImportQuantity(1);
-    }
-
-    if (importableUnits.length === 1) {
-      setSelectedImportUnit(importableUnits[0]);
-      setImportQuantity(importableUnits[0].quantity);
-    }
-  }, [importOpen, importableUnits, selectedImportUnit]);
-
-  async function refreshMachine() {
-    if (!params.id) {
-      return;
-    }
-
-    const response = await api.getMachine(params.id);
-    setMachine(response.data);
-  }
-
-  function openCreateJobDialog() {
-    if (!machine) {
-      return;
-    }
-    setSelectedJobInputIds(machine.items.map((item) => item.assignment_id));
-    setCreateJobWorkerName('');
-    setCreateJobNotes('');
-    setCreateJobOpen(true);
-  }
-
-  async function openJobDialog(job: ProductionJobSummary) {
-    setSelectedJob(job);
-    setJobOpen(true);
-    setJobLoading(true);
-    setJobActionWorkerName('');
-    setJobActionNotes('');
-    setJobRackId('');
-    setJobRackDetail(null);
+  const handleImport = async () => {
+    if (!selectedUnit || !workerName) return;
     try {
-      const response = await api.getProductionJob(job.id);
-      setJobDetail(response.data);
-      setJobOutputRows(
-        response.data.outputs.length > 0
-          ? response.data.outputs.map((output) => ({
-              key: output.id,
-              item_id: output.item_id,
-              quantity: output.quantity,
-              outcome: output.outcome,
-              destination_type: output.output_type,
-              shelf_slot_id: '',
-              machine_id: '',
-              notes: output.notes || '',
-            }))
-          : [
-              {
-                key: crypto.randomUUID(),
-                item_id: '',
-                quantity: 1,
-                outcome: 'good',
-                destination_type: 'storage',
-                shelf_slot_id: '',
-                machine_id: '',
-                notes: '',
-              },
-            ],
-      );
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to load job', 'error');
-      setJobOpen(false);
-      setSelectedJob(null);
-    } finally {
-      setJobLoading(false);
-    }
-  }
-
-  function handleSelectImportUnit(unit: TrackingUnit) {
-    setSelectedImportUnit(unit);
-    setImportQuantity(unit.quantity);
-  }
-
-  function openImportDialog() {
-    setImportOpen(true);
-    setImportQuery('');
-    setImportResults([]);
-    setSelectedImportItem(null);
-    setSelectedImportItemDetail(null);
-    setSelectedImportUnit(null);
-    setImportQuantity(1);
-    setImportWorkerName('');
-    setImportNotes('');
-  }
-
-  function openMoveDialog(item: MachineDetailItem) {
-    setMoveUnit(item);
-    setMoveDestinationType('shelf');
-    setMoveRackId('');
-    setMoveRackDetail(null);
-    setMoveShelfSlotId('');
-    setMoveMachineId('');
-    setMoveQuantity(item.quantity);
-    setMoveWorkerName('');
-    setMoveNotes('');
-    setMoveOpen(true);
-  }
-
-  function openStatusDialog(item: MachineDetailItem, statusOverride?: string) {
-    setStatusUnit(item);
-    setNextStatus(statusOverride || item.status);
-    setStatusWorkerName('');
-    setStatusNotes('');
-    setStatusOpen(true);
-  }
-
-  async function selectImportItem(item: ItemWithLocation) {
-    setSelectedImportItem(item);
-    setSelectedImportUnit(null);
-    setImportQuantity(1);
-    setImportItemLoading(true);
-    try {
-      const response = await api.getItem(item.id);
-      setSelectedImportItemDetail(response.data);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to load item units', 'error');
-      setSelectedImportItemDetail(null);
-    } finally {
-      setImportItemLoading(false);
-    }
-  }
-
-  async function handleImportUnit() {
-    if (!machine) {
-      showToast('Machine is not available', 'error');
-      return;
-    }
-
-    if (!selectedImportUnit) {
-      showToast('Select a storage unit to import', 'error');
-      return;
-    }
-
-    if (!importWorkerName.trim()) {
-      showToast('Enter worker name', 'error');
-      return;
-    }
-
-    if (importQuantity <= 0 || importQuantity > selectedImportUnit.quantity) {
-      showToast(`Quantity must be between 1 and ${selectedImportUnit.quantity}`, 'error');
-      return;
-    }
-
-    setImportSubmitting(true);
-    try {
-      const moveResponse = await api.moveItem({
-        assignment_id: selectedImportUnit.assignment_id,
+      await api.moveItem({
+        assignment_id: selectedUnit.assignment_id,
         source_type: 'shelf',
-        to_machine_id: machine.id,
-        performed_by: importWorkerName.trim(),
+        to_machine_id: id,
+        performed_by: workerName,
         notes: importNotes || undefined,
-        quantity: importQuantity,
+        quantity: importQty,
       });
-
-      const [machineResponse, itemResponse] = await Promise.all([
-        api.getMachine(machine.id),
-        selectedImportItem ? api.getItem(selectedImportItem.id) : Promise.resolve(null),
-      ]);
-
-      setMachine(machineResponse.data);
-      if (itemResponse) {
-        setSelectedImportItemDetail(itemResponse.data);
-      }
+      showToast(`Imported ${selectedUnit.unit_code} to machine`, 'success');
       setImportOpen(false);
-      setSelectedImportItem(null);
-      setSelectedImportItemDetail(null);
-      setSelectedImportUnit(null);
-      setImportQuantity(1);
-      setImportWorkerName('');
-      setImportNotes('');
-
-      showToast(
-        importQuantity < selectedImportUnit.quantity
-          ? `Imported ${importQuantity} pcs as unit ${moveResponse.data.unit_code}`
-          : `Imported unit ${moveResponse.data.unit_code} to ${machine.code}`,
-      );
+      resetImportState();
+      refreshMachine();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Import failed', 'error');
-    } finally {
-      setImportSubmitting(false);
     }
-  }
+  };
 
-  function updateOutputRow(key: string, patch: Partial<(typeof jobOutputRows)[number]>) {
-    setJobOutputRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-  }
-
-  function addOutputRow() {
-    setJobOutputRows((current) => [
-      ...current,
-      {
-        key: crypto.randomUUID(),
-        item_id: '',
-        quantity: 1,
-        outcome: 'good',
-        destination_type: 'storage',
-        shelf_slot_id: '',
-        machine_id: '',
-        notes: '',
-      },
-    ]);
-  }
-
-  function removeOutputRow(key: string) {
-    setJobOutputRows((current) => current.filter((row) => row.key !== key));
-  }
-
-  async function handleCreateJob() {
-    if (!machine || !canCreateJob) {
-      showToast('Select at least one input unit and enter worker name', 'error');
-      return;
-    }
-
-    setCreateJobSubmitting(true);
+  const handleMove = async () => {
+    if (!moveItem || !workerName) return;
     try {
-      await api.createProductionJob({
-        machine_id: machine.id,
-        input_assignment_ids: selectedJobInputIds,
-        assigned_by: createJobWorkerName.trim(),
-        notes: createJobNotes || undefined,
-      });
-      await refreshMachine();
-      setCreateJobOpen(false);
-      showToast('Production job created');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to create job', 'error');
-    } finally {
-      setCreateJobSubmitting(false);
-    }
-  }
-
-  async function handleStartJob() {
-    if (!selectedJob || !jobActionWorkerName.trim()) {
-      showToast('Enter worker name to start the job', 'error');
-      return;
-    }
-
-    setJobSubmitting(true);
-    try {
-      await api.startProductionJob(selectedJob.id, { performed_by: jobActionWorkerName.trim() });
-      await refreshMachine();
-      await openJobDialog({ ...selectedJob, status: 'in_progress' });
-      showToast(`Started ${selectedJob.job_code}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to start job', 'error');
-    } finally {
-      setJobSubmitting(false);
-    }
-  }
-
-  async function handleCompleteJob() {
-    if (!selectedJob || !jobDetail || !jobActionWorkerName.trim()) {
-      showToast('Enter worker name to complete the job', 'error');
-      return;
-    }
-
-    const body: CompleteProductionJobRequest = {
-      completed_by: jobActionWorkerName.trim(),
-      notes: jobActionNotes || undefined,
-      inputs: jobDetail.inputs.map((input) => ({
-        machine_assignment_id: input.machine_assignment_id,
-        consumed_quantity: input.consumed_quantity || input.planned_quantity,
-      })),
-      outputs: jobOutputRows.map((row) => ({
-        item_id: row.item_id,
-        quantity: row.quantity,
-        outcome: row.outcome,
-        destination_type: row.destination_type,
-        shelf_slot_id: row.shelf_slot_id || undefined,
-        machine_id: row.machine_id || undefined,
-        notes: row.notes || undefined,
-      })),
-    };
-
-    setJobSubmitting(true);
-    try {
-      await api.completeProductionJob(selectedJob.id, body);
-      await refreshMachine();
-      setJobOpen(false);
-      setSelectedJob(null);
-      setJobDetail(null);
-      showToast(`Completed ${selectedJob.job_code}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to complete job', 'error');
-    } finally {
-      setJobSubmitting(false);
-    }
-  }
-
-  async function handleMoveUnit() {
-    if (!moveUnit || !machine) {
-      showToast('Select a unit to move', 'error');
-      return;
-    }
-
-    if (!moveWorkerName.trim()) {
-      showToast('Enter worker name', 'error');
-      return;
-    }
-
-    if (moveQuantity <= 0 || moveQuantity > moveUnit.quantity) {
-      showToast(`Quantity must be between 1 and ${moveUnit.quantity}`, 'error');
-      return;
-    }
-
-    if (moveDestinationType === 'shelf' && !moveShelfSlotId) {
-      showToast('Select a destination cell', 'error');
-      return;
-    }
-
-    if (moveDestinationType === 'machine' && !moveMachineId) {
-      showToast('Select a destination machine', 'error');
-      return;
-    }
-
-    setMoveSubmitting(true);
-    try {
-      const response = await api.moveItem({
-        assignment_id: moveUnit.assignment_id,
+      await api.moveItem({
+        assignment_id: moveItem.assignment_id,
         source_type: 'machine',
-        to_shelf_slot_id: moveDestinationType === 'shelf' ? moveShelfSlotId : undefined,
-        to_machine_id: moveDestinationType === 'machine' ? moveMachineId : undefined,
-        performed_by: moveWorkerName.trim(),
+        to_shelf_slot_id: moveDestType === 'storage' ? moveSelectedSlot : undefined,
+        to_machine_id: moveDestType === 'machine' ? moveSelectedMachine : undefined,
+        performed_by: workerName,
         notes: moveNotes || undefined,
-        quantity: moveQuantity,
+        quantity: moveQty,
       });
-
-      await refreshMachine();
+      showToast(`Moved ${moveItem.unit_code}`, 'success');
       setMoveOpen(false);
-      setMoveUnit(null);
-      showToast(
-        moveQuantity < moveUnit.quantity
-          ? `Moved ${moveQuantity} pcs into new unit ${response.data.unit_code}`
-          : `Moved unit ${response.data.unit_code} to ${response.data.to}`,
-      );
+      refreshMachine();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Move failed', 'error');
-    } finally {
-      setMoveSubmitting(false);
     }
-  }
+  };
 
-  async function handleStatusUpdate() {
-    if (!machine || !statusUnit) {
-      showToast('Select a unit first', 'error');
-      return;
-    }
+  const resetImportState = () => {
+    setImportSearch(''); setImportResults([]); setSelectedItem(null);
+    setSelectedUnit(null); setImportUnits([]); setImportQty(1);
+    setImportNotes('');
+  };
 
-    if (!statusWorkerName.trim()) {
-      showToast('Enter worker name', 'error');
-      return;
-    }
+  const openMoveModal = (item: MachineDetailItem) => {
+    setMoveItem(item);
+    setMoveQty(item.quantity);
+    setMoveDestType('storage');
+    setMoveSelectedRack(''); setMoveSelectedSlot('');
+    setMoveSelectedMachine(''); setMoveNotes('');
+    setMoveOpen(true);
+  };
 
-    setStatusSubmitting(true);
-    try {
-      await api.updateMachineAssignmentStatus(machine.id, statusUnit.assignment_id, {
-        status: nextStatus,
-        performed_by: statusWorkerName.trim(),
-        notes: statusNotes || undefined,
-      });
-      await refreshMachine();
-      setStatusOpen(false);
-      setStatusUnit(null);
-      showToast(`Updated ${statusUnit.unit_code} to ${machineAssignmentStatusLabel(nextStatus)}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Status update failed', 'error');
-    } finally {
-      setStatusSubmitting(false);
-    }
-  }
+  if (loading) return <LoadingSpinner />;
+  if (error || !machine) return <EmptyState title="Error" description={error || 'Machine not found'} />;
 
-  if (loading) {
-    return (
-      <Paper variant="outlined" sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
-        <LoadingSpinner />
-        <Typography variant="body2" color="text.secondary">Loading machine...</Typography>
-      </Paper>
-    );
-  }
-
-  if (error || !machine) {
-    return <EmptyState title="Unable to load machine" description={error || 'Machine not found'} />;
-  }
-
-  const oldestDays = daysSince(machine.stats.oldest_assignment);
+  const daysOld = machine.stats.oldest_assignment
+    ? Math.floor((Date.now() - new Date(machine.stats.oldest_assignment).getTime()) / 86400000)
+    : null;
 
   return (
-    <Stack spacing={2.5}>
+    <Box>
       {/* Header */}
-      <Paper variant="outlined" sx={{ p: 2.5 }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={2}>
-          <Stack direction="row" alignItems="center" spacing={2}>
-            <PrecisionManufacturingIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
-            <Box>
-              <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap">
-                <Typography variant="h3">{machine.name}</Typography>
-                <Chip
-                  label={machineCategoryLabel(machine.category)}
-                  size="small"
-                  color={categoryColors[machine.category] || 'default'}
-                  variant="outlined"
-                />
-              </Stack>
-              <Stack direction="row" spacing={2} mt={0.5} flexWrap="wrap">
-                <Typography variant="body2" fontFamily="monospace" fontWeight={500}>{machine.code}</Typography>
-                <Typography variant="body2" color="text.secondary">{machine.description}</Typography>
-              </Stack>
-            </Box>
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button onClick={openImportDialog}>Import units</Button>
-            <Link href="/machines" style={{ fontSize: 13, color: '#1565C0', textDecoration: 'none' }}>All machines</Link>
-          </Stack>
-        </Stack>
-      </Paper>
+      <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+        <Box>
+          <Link href="/machines" style={{ fontSize: 12, color: '#1565C0', textDecoration: 'none' }}>
+            &larr; All machines
+          </Link>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+            <PrecisionManufacturingIcon sx={{ fontSize: 20 }} />
+            <Typography sx={{ fontSize: 18, fontWeight: 700 }}>{machine.code}</Typography>
+            <Chip label={machine.category.replace('_', ' ')} size="small" color={CATEGORY_COLORS[machine.category] || 'default'} />
+          </Box>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{machine.name}</Typography>
+          {machine.description && <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.3 }}>{machine.description}</Typography>}
+        </Box>
+        <Button variant="primary" onClick={() => { resetImportState(); setImportOpen(true); }}>
+          Import units
+        </Button>
+      </Box>
 
-      {/* Stats cards */}
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-            <InventoryIcon sx={{ color: 'primary.main', mb: 0.5 }} />
-            <Typography variant="h2">{machine.stats.active_assignments}</Typography>
-            <Typography variant="caption" color="text.secondary">Items at machine</Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-            <PrecisionManufacturingIcon sx={{ color: 'secondary.main', mb: 0.5 }} />
-            <Typography variant="h2">{machine.stats.total_pieces}</Typography>
-            <Typography variant="caption" color="text.secondary">Total pieces</Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-            <CheckCircleIcon sx={{ color: 'success.main', mb: 0.5 }} />
-            <Typography variant="h2">{machine.jobs.filter((job) => job.status === 'completed').length}</Typography>
-            <Typography variant="caption" color="text.secondary">Completed production jobs</Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-            {oldestDays !== null && oldestDays > 7 ? (
-              <WarningIcon sx={{ color: 'warning.main', mb: 0.5 }} />
-            ) : (
-              <ScheduleIcon sx={{ color: 'text.secondary', mb: 0.5 }} />
-            )}
-            <Typography variant="h2">{oldestDays !== null ? `${oldestDays}d` : '-'}</Typography>
-            <Typography variant="caption" color="text.secondary">Oldest item age</Typography>
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* Content grid */}
-      <Grid container spacing={2.5}>
-        {/* Items at machine */}
-        <Grid size={{ xs: 12, lg: 7 }}>
-          <Card>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="subtitle1">Items being processed</Typography>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Typography variant="caption" color="text.secondary">{machine.items.length} items</Typography>
-                  {machine.items.length > 0 ? <Button variant="secondary" onClick={openCreateJobDialog}>Create job</Button> : null}
-                </Stack>
-              </Stack>
-
-              {machine.items.length === 0 ? (
-                <Stack spacing={2}>
-                  <EmptyState title="No items" description="This machine has no items assigned to it." />
-                  <Stack direction="row" justifyContent="center">
-                    <Button onClick={openImportDialog}>Import first unit</Button>
-                  </Stack>
-                </Stack>
-              ) : (
-                <Stack divider={<Divider />}>
-                  {machine.items.map((item) => {
-                    const days = daysSince(item.assigned_at);
-                    return (
-                      <Box key={item.assignment_id} py={1.5}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                          <Box flex={1} minWidth={0}>
-                            <Link href={`/items/${item.item_id}`} style={{ textDecoration: 'none' }}>
-                              <Typography variant="body2" fontFamily="monospace" fontWeight={600} color="primary" sx={{ '&:hover': { textDecoration: 'underline' } }}>
-                                {item.item_code}
-                              </Typography>
-                            </Link>
-                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" mt={0.25}>
-                              <Typography variant="caption" color="text.secondary" fontFamily="monospace">{item.unit_code}</Typography>
-                              <Badge variant={machineStatusVariant(item.status)}>{machineAssignmentStatusLabel(item.status)}</Badge>
-                            </Stack>
-                            <Typography variant="body2" mt={0.25}>{item.item_name}</Typography>
-                            <Stack direction="row" spacing={1.5} mt={0.5} flexWrap="wrap">
-                              <Typography variant="caption" color="text.secondary">{item.customer_name || 'General stock'}</Typography>
-                              <Typography variant="caption" color="text.secondary">{item.material}</Typography>
-                              {item.dimensions ? <Typography variant="caption" color="text.secondary">{item.dimensions}</Typography> : null}
-                            </Stack>
-                          </Box>
-                          <Stack alignItems="flex-end" spacing={0.75} sx={{ minWidth: 190 }}>
-                            <Chip label={`${item.quantity} pcs`} size="small" variant="outlined" />
-                            {days !== null && days > 7 ? (
-                              <Typography variant="caption" color="warning.main" fontWeight={600}>{days} days</Typography>
-                            ) : days !== null ? (
-                              <Typography variant="caption" color="text.secondary">{days} days</Typography>
-                            ) : null}
-                            <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="flex-end">
-                              <Link href={`/check-out/${item.item_id}?assignmentId=${encodeURIComponent(item.assignment_id)}&unitCode=${encodeURIComponent(item.unit_code)}&sourceType=machine`}>
-                                <Button variant="danger">Check out</Button>
-                              </Link>
-                              <Button variant="secondary" onClick={() => openMoveDialog(item)}>Move</Button>
-                              <Button variant="secondary" onClick={() => openStatusDialog(item)}>Set status</Button>
-                              <Button variant="danger" onClick={() => openStatusDialog(item, 'needs_attention')}>Flag</Button>
-                            </Stack>
-                          </Stack>
-                        </Stack>
-                        <Stack direction="row" spacing={1.5} mt={0.5}>
-                          <Typography variant="caption" color="text.secondary">Assigned by {item.assigned_by} on {formatDateTime(item.assigned_at)}</Typography>
-                        </Stack>
-                        {item.notes ? <Typography variant="caption" color="text.secondary" mt={0.5} display="block">Note: {item.notes}</Typography> : null}
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Activity */}
-        <Grid size={{ xs: 12, lg: 5 }}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="subtitle1">Production jobs</Typography>
-                <Typography variant="caption" color="text.secondary">{machine.jobs.length} jobs</Typography>
-              </Stack>
-
-              {machine.jobs.length === 0 ? (
-                <EmptyState title="No jobs yet" description="Create a production job from the units currently assigned to this machine." />
-              ) : (
-                <Stack spacing={1.5} mb={3}>
-                  {machine.jobs.map((job) => (
-                    <Paper key={job.id} variant="outlined" sx={{ p: 1.5 }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                        <Box>
-                          <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{job.job_code}</Typography>
-                          <Typography variant="caption" color="text.secondary">{job.input_count} inputs • {job.output_count} outputs</Typography>
-                          {job.result_summary ? <Typography variant="caption" color="text.secondary" display="block">{job.result_summary}</Typography> : null}
-                        </Box>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Badge variant={job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'primary' : 'default'}>{job.status}</Badge>
-                          <Button variant="secondary" onClick={() => void openJobDialog(job)}>Open</Button>
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Stack>
-              )}
-
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="subtitle1">Recent activity</Typography>
-                <Typography variant="caption" color="text.secondary">{machine.activity.length} entries</Typography>
-              </Stack>
-
-              <Box sx={{ maxHeight: 520, overflow: 'auto' }}>
-                {machine.activity.length === 0 ? (
-                  <EmptyState title="No activity" description="No recorded moves to or from this machine." />
-                ) : (
-                  <Stack divider={<Divider />}>
-                    {machine.activity.map((entry) => (
-                      <Box key={entry.id} py={1.5}>
-                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                          <Badge variant={entry.to_location === `M/${machine.code}` ? 'warning' : 'success'}>
-                            {entry.to_location === `M/${machine.code}` ? 'Received' : 'Sent out'}
-                          </Badge>
-                          <Typography variant="caption" color="text.secondary">{formatDateTime(entry.created_at)}</Typography>
-                        </Stack>
-                        <Link href={`/items/${entry.item_id}`} style={{ textDecoration: 'none' }}>
-                          <Typography variant="body2" fontWeight={500} mt={0.5} color="primary" sx={{ '&:hover': { textDecoration: 'underline' } }}>
-                            {entry.item_code} — {entry.item_name}
-                          </Typography>
-                        </Link>
-                        <Typography variant="caption" color="text.secondary" component="div">
-                          From <Typography variant="caption" component="span" fontWeight={700}>{entry.from_location || '-'}</Typography> to <Typography variant="caption" component="span" fontWeight={700}>{entry.to_location || '-'}</Typography>
-                        </Typography>
-                        {entry.notes ? <Typography variant="body2" mt={0.5}>{entry.notes}</Typography> : null}
-                        <Typography variant="caption" color="text.secondary" display="block">{entry.performed_by}</Typography>
-                      </Box>
-                    ))}
-                  </Stack>
-                )}
+      {/* Stats */}
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 4 }}>
+          <Card variant="outlined">
+            <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <InventoryIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Active items</Typography>
               </Box>
+              <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{machine.stats.active_assignments}</Typography>
+              <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{machine.stats.total_pieces} pcs</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 4 }}>
+          <Card variant="outlined">
+            <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <ScheduleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Oldest item</Typography>
+              </Box>
+              <Typography sx={{ fontSize: 20, fontWeight: 700 }}>
+                {daysOld !== null ? `${daysOld}d` : '—'}
+              </Typography>
+              {daysOld !== null && daysOld > 7 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                  <WarningIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                  <Typography sx={{ fontSize: 11, color: 'warning.main' }}>Over 7 days</Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      <Modal
-        open={createJobOpen}
-        title={`Create production job for ${machine.code}`}
-        confirmLabel={createJobSubmitting ? 'Creating...' : 'Create job'}
-        confirmDisabled={!canCreateJob}
-        onConfirm={handleCreateJob}
-        onClose={() => setCreateJobOpen(false)}
-      >
-        <Stack spacing={2.5} pt={0.5}>
-          <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto' }}>
-            <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
-              <Typography variant="subtitle2">Input units</Typography>
-            </Box>
+      {/* Main content */}
+      <Grid container spacing={2}>
+        {/* Items at machine */}
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Paper variant="outlined" sx={{ p: 1.5 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>Items at machine</Typography>
             {machine.items.length === 0 ? (
-              <Box px={2} py={2}><Typography variant="body2" color="text.secondary">No machine units available.</Typography></Box>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', py: 2, textAlign: 'center' }}>
+                No items at this machine
+              </Typography>
             ) : (
-              <Stack divider={<Divider />}>
-                {machine.items.map((item) => {
-                  const checked = selectedJobInputIds.includes(item.assignment_id);
+              <Stack spacing={1}>
+                {machine.items.map(item => {
+                  const daysHere = Math.floor((Date.now() - new Date(item.assigned_at).getTime()) / 86400000);
                   return (
-                    <Box key={item.assignment_id} px={2} py={1.5}>
-                      <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                        <Checkbox
-                          checked={checked}
-                          onChange={() =>
-                            setSelectedJobInputIds((current) =>
-                              checked ? current.filter((id) => id !== item.assignment_id) : [...current, item.assignment_id],
-                            )
-                          }
-                        />
-                        <Box>
-                          <Typography variant="body2" fontWeight={600}>{item.item_code}</Typography>
-                          <Typography variant="caption" color="text.secondary" fontFamily="monospace">{item.unit_code}</Typography>
-                          <Typography variant="body2">{item.item_name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{item.quantity} pcs</Typography>
+                    <Paper key={item.assignment_id} variant="outlined" sx={{ p: 1.5 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Link href={`/items/${item.item_id}`} style={{ fontSize: 13, fontWeight: 600, color: '#1565C0', textDecoration: 'none' }}>
+                            {item.item_code}
+                          </Link>
+                          <Typography sx={{ fontSize: 11, color: 'text.secondary', fontFamily: 'Roboto Mono, monospace' }}>
+                            {item.unit_code}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12 }}>{item.item_name}</Typography>
+                          {item.customer_name && (
+                            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{item.customer_name}</Typography>
+                          )}
+                          <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                            {item.material} &middot; {item.dimensions} &middot; {item.quantity} pcs
+                            &middot; {daysHere}d
+                            {daysHere > 7 && <WarningIcon sx={{ fontSize: 11, color: 'warning.main', ml: 0.3, verticalAlign: 'middle' }} />}
+                          </Typography>
                         </Box>
-                      </Stack>
+                        <Stack direction="row" spacing={0.5}>
+                          <Button variant="secondary" onClick={() => openMoveModal(item)}>Move</Button>
+                          <Link href={`/check-out/${item.item_id}?assignmentId=${item.assignment_id}&unitCode=${item.unit_code}&sourceType=machine`}>
+                            <Button variant="danger">Check out</Button>
+                          </Link>
+                        </Stack>
+                      </Box>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Recent activity */}
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Paper variant="outlined" sx={{ p: 1.5 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, mb: 1 }}>Recent activity</Typography>
+            {machine.activity.length === 0 ? (
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', py: 2, textAlign: 'center' }}>
+                No activity yet
+              </Typography>
+            ) : (
+              <Stack spacing={0.5} sx={{ maxHeight: 500, overflowY: 'auto' }}>
+                {machine.activity.map(a => {
+                  const isReceived = a.to_location === `M/${machine.code}`;
+                  return (
+                    <Box key={a.id} sx={{ py: 0.5, borderBottom: '1px solid #f0f0f0' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Badge variant={isReceived ? 'warning' : 'success'}>
+                          {isReceived ? 'Received' : 'Sent out'}
+                        </Badge>
+                        <Link href={`/items/${a.item_id}`} style={{ fontSize: 12, fontWeight: 600, color: '#1565C0', textDecoration: 'none' }}>
+                          {a.item_code}
+                        </Link>
+                      </Box>
+                      <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                        {a.item_name}
+                        {isReceived && a.from_location && ` from ${a.from_location}`}
+                        {!isReceived && a.to_location && ` to ${a.to_location}`}
+                      </Typography>
+                      <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
+                        {formatDateTime(a.created_at)} &middot; {a.performed_by}
+                        {a.notes && ` — ${a.notes}`}
+                      </Typography>
                     </Box>
                   );
                 })}
               </Stack>
             )}
           </Paper>
+        </Grid>
+      </Grid>
 
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Input label="Worker name" value={createJobWorkerName} onChange={(event) => setCreateJobWorkerName(event.target.value)} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                label="Notes"
-                value={createJobNotes}
-                onChange={(event) => setCreateJobNotes(event.target.value)}
-                multiline
-                minRows={2}
-                fullWidth
-                placeholder="Setup notes, intended output, batching context, etc."
-              />
-            </Grid>
-          </Grid>
-        </Stack>
-      </Modal>
-
-      <Modal
-        open={jobOpen}
-        title={selectedJob ? `Production job ${selectedJob.job_code}` : 'Production job'}
-        confirmLabel={
-          jobSubmitting
-            ? selectedJob?.status === 'draft'
-              ? 'Starting...'
-              : 'Completing...'
-            : selectedJob?.status === 'draft'
-              ? 'Start job'
-              : 'Complete job'
-        }
-        confirmDisabled={selectedJob?.status === 'draft' ? !canStartJob : !canCompleteJob}
-        onConfirm={selectedJob?.status === 'draft' ? handleStartJob : handleCompleteJob}
-        onClose={() => setJobOpen(false)}
-      >
-        <Stack spacing={2.5} pt={0.5}>
-          {jobLoading || !jobDetail ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <LoadingSpinner />
-              <Typography variant="body2" color="text.secondary">Loading production job...</Typography>
+      {/* Import modal */}
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title={`Import units to ${machine.code}`}>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 5 }}>
+            <TextField fullWidth size="small" placeholder="Search items..." value={importSearch}
+              onChange={e => { setImportSearch(e.target.value); setSelectedItem(null); }}
+              sx={{ mb: 1 }}
+            />
+            {importSearching && <Typography sx={{ fontSize: 11 }}>Searching...</Typography>}
+            <Stack spacing={0.5} sx={{ maxHeight: 300, overflowY: 'auto' }}>
+              {importResults.map(item => (
+                <Paper key={item.id} variant="outlined"
+                  onClick={() => setSelectedItem(item)}
+                  sx={{
+                    p: 1, cursor: 'pointer',
+                    borderColor: selectedItem?.id === item.id ? '#1565C0' : undefined,
+                    bgcolor: selectedItem?.id === item.id ? '#e3f2fd' : undefined,
+                    '&:hover': { bgcolor: '#f5f5f5' },
+                  }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 600 }}>{item.item_code}</Typography>
+                  <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{item.name}</Typography>
+                  {item.customer_name && <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>{item.customer_name}</Typography>}
+                </Paper>
+              ))}
             </Stack>
-          ) : (
-            <>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-                  <Typography variant="subtitle2">{jobDetail.job_code}</Typography>
-                  <Badge variant={jobDetail.status === 'completed' ? 'success' : jobDetail.status === 'in_progress' ? 'primary' : 'default'}>{jobDetail.status}</Badge>
-                </Stack>
-                <Typography variant="caption" color="text.secondary">{jobDetail.input_count} inputs • {jobDetail.output_count} outputs</Typography>
-                {jobDetail.notes ? <Typography variant="body2" mt={1}>{jobDetail.notes}</Typography> : null}
-              </Paper>
-
-              <Paper variant="outlined" sx={{ maxHeight: 280, overflow: 'auto' }}>
-                <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
-                  <Typography variant="subtitle2">Inputs</Typography>
-                </Box>
-                <Stack divider={<Divider />}>
-                  {jobDetail.inputs.map((input) => (
-                    <Box key={input.id} px={2} py={1.5}>
-                      <Typography variant="body2" fontWeight={600}>{input.item_code}</Typography>
-                      <Typography variant="caption" color="text.secondary" fontFamily="monospace">{input.unit_code}</Typography>
-                      <Typography variant="body2">{input.item_name}</Typography>
-                      <Grid container spacing={2} mt={0.5}>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                          <Input
-                            label={`Consumed quantity (max ${input.available_quantity || input.planned_quantity})`}
-                            type="number"
-                            value={String(input.consumed_quantity || input.planned_quantity)}
-                            onChange={(event) => {
-                              const value = Math.max(1, Math.min(input.available_quantity || input.planned_quantity, Number(event.target.value) || 1));
-                              setJobDetail((current) => current ? {
-                                ...current,
-                                inputs: current.inputs.map((entry) => entry.id === input.id ? { ...entry, consumed_quantity: value } : entry),
-                              } : current);
-                            }}
-                          />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 8 }}>
-                          <Typography variant="caption" color="text.secondary">Available: {input.available_quantity || input.planned_quantity} pcs • Unit {input.unit_code}</Typography>
-                        </Grid>
-                      </Grid>
-                    </Box>
-                  ))}
-                </Stack>
-              </Paper>
-
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
-                  <Typography variant="subtitle2">Outputs</Typography>
-                  <Button variant="secondary" onClick={addOutputRow}>Add output</Button>
-                </Stack>
-                {jobOutputRows.some((row) => row.destination_type === 'storage') ? (
-                  <Grid container spacing={2} mb={2}>
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Select
-                        label="Storage output rack"
-                        value={jobRackId}
-                        onChange={(event) => {
-                          setJobRackId(event.target.value);
-                          setJobOutputRows((current) => current.map((row) => row.destination_type === 'storage' ? { ...row, shelf_slot_id: '' } : row));
-                        }}
-                        options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: `${rack.code} - ${rack.label}` }))]}
-                      />
-                    </Grid>
-                  </Grid>
-                ) : null}
-                <Stack spacing={2}>
-                  {jobOutputRows.map((row, index) => (
-                    <Paper key={row.key} variant="outlined" sx={{ p: 1.5, bgcolor: 'grey.50' }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Typography variant="caption" color="text.secondary">Output {index + 1}</Typography>
-                        {jobOutputRows.length > 1 ? <Button variant="secondary" onClick={() => removeOutputRow(row.key)}>Remove</Button> : null}
-                      </Stack>
-                      <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, md: 6 }}>
-                          <Select
-                            label="Output item"
-                            value={row.item_id}
-                            onChange={(event) => updateOutputRow(row.key, { item_id: event.target.value })}
-                            options={[{ value: '', label: 'Select item' }, ...outputCatalog.map((item) => ({ value: item.id, label: item.label }))]}
-                          />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 2 }}>
-                          <Input label="Quantity" type="number" value={String(row.quantity)} onChange={(event) => updateOutputRow(row.key, { quantity: Math.max(1, Number(event.target.value) || 1) })} />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                          <Select
-                            label="Outcome"
-                            value={row.outcome}
-                            onChange={(event) => updateOutputRow(row.key, { outcome: event.target.value as typeof row.outcome })}
-                            options={[
-                              { value: 'good', label: 'Good output' },
-                              { value: 'scrap', label: 'Scrap' },
-                              { value: 'rework', label: 'Rework' },
-                              { value: 'hold', label: 'Hold' },
-                            ]}
-                          />
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 4 }}>
-                          <Select
-                            label="Destination"
-                            value={row.destination_type}
-                            onChange={(event) => updateOutputRow(row.key, { destination_type: event.target.value as typeof row.destination_type, shelf_slot_id: '', machine_id: '' })}
-                            options={[
-                              { value: 'storage', label: 'Storage cell' },
-                              { value: 'machine', label: 'Machine' },
-                              { value: 'none', label: 'No destination' },
-                            ]}
-                          />
-                        </Grid>
-                        {row.destination_type === 'storage' ? (
-                          <Grid size={{ xs: 12, md: 4 }}>
-                            <Select
-                              label="Storage cell"
-                              value={row.shelf_slot_id}
-                              onChange={(event) => updateOutputRow(row.key, { shelf_slot_id: event.target.value })}
-                              options={[{ value: '', label: jobRackId ? 'Select cell' : 'Choose rack first' }, ...availableJobShelves]}
-                            />
-                          </Grid>
-                        ) : null}
-                        {row.destination_type === 'machine' ? (
-                          <Grid size={{ xs: 12, md: 4 }}>
-                            <Select
-                              label="Destination machine"
-                              value={row.machine_id}
-                              onChange={(event) => updateOutputRow(row.key, { machine_id: event.target.value })}
-                              options={[{ value: '', label: 'Select machine' }, ...machines.map((entry) => ({ value: entry.id, label: `${entry.code} - ${entry.name}` }))]}
-                            />
-                          </Grid>
-                        ) : null}
-                        <Grid size={{ xs: 12, md: 12 }}>
-                          <TextField label="Notes" value={row.notes} onChange={(event) => updateOutputRow(row.key, { notes: event.target.value })} multiline minRows={2} fullWidth />
-                        </Grid>
-                      </Grid>
+          </Grid>
+          <Grid size={{ xs: 7 }}>
+            {!selectedItem ? (
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 4, textAlign: 'center' }}>
+                Choose an item from the left
+              </Typography>
+            ) : importUnitsLoading ? (
+              <LoadingSpinner />
+            ) : importUnits.length === 0 ? (
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 4, textAlign: 'center' }}>
+                No storage units available for import
+              </Typography>
+            ) : (
+              <>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>Storage units</Typography>
+                <Stack spacing={0.5} sx={{ maxHeight: 200, overflowY: 'auto', mb: 1 }}>
+                  {importUnits.map(u => (
+                    <Paper key={u.assignment_id} variant="outlined"
+                      onClick={() => { setSelectedUnit(u); setImportQty(u.quantity); }}
+                      sx={{
+                        p: 0.8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1,
+                        borderColor: selectedUnit?.assignment_id === u.assignment_id ? '#1565C0' : undefined,
+                        bgcolor: selectedUnit?.assignment_id === u.assignment_id ? '#e3f2fd' : undefined,
+                      }}>
+                      <RadioButtonUncheckedIcon sx={{ fontSize: 16, color: selectedUnit?.assignment_id === u.assignment_id ? '#1565C0' : '#bbb' }} />
+                      <Box>
+                        <Typography sx={{ fontSize: 11, fontFamily: 'Roboto Mono, monospace' }}>{u.unit_code}</Typography>
+                        <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>{u.quantity} pcs</Typography>
+                      </Box>
                     </Paper>
                   ))}
                 </Stack>
-              </Paper>
-
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Input label="Worker name" value={jobActionWorkerName} onChange={(event) => setJobActionWorkerName(event.target.value)} />
-                </Grid>
-                <Grid size={{ xs: 12, md: 8 }}>
-                  <TextField label="Job notes" value={jobActionNotes} onChange={(event) => setJobActionNotes(event.target.value)} multiline minRows={2} fullWidth />
-                </Grid>
-              </Grid>
-            </>
-          )}
-        </Stack>
+                <TextField fullWidth size="small" type="number" label="Quantity"
+                  value={importQty} onChange={e => setImportQty(Math.max(1, Math.min(selectedUnit?.quantity || 1, +e.target.value)))}
+                  slotProps={{ htmlInput: { min: 1, max: selectedUnit?.quantity || 1 } }}
+                  sx={{ mb: 1 }}
+                />
+                <TextField fullWidth size="small" label="Notes" value={importNotes}
+                  onChange={e => setImportNotes(e.target.value)} multiline rows={2}
+                />
+              </>
+            )}
+          </Grid>
+        </Grid>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+          <Button variant="secondary" onClick={() => setImportOpen(false)}>Cancel</Button>
+          <Button variant="primary" onClick={handleImport}
+            disabled={!selectedUnit || !workerName}>
+            Import unit
+          </Button>
+        </Box>
       </Modal>
 
-      <Modal
-        open={moveOpen}
-        title={moveUnit ? `Move ${moveUnit.unit_code}` : 'Move unit'}
-        confirmLabel={moveSubmitting ? 'Moving...' : 'Confirm move'}
-        confirmDisabled={!canSubmitMove}
-        onConfirm={handleMoveUnit}
-        onClose={() => setMoveOpen(false)}
-      >
-        <Stack spacing={2.5} pt={0.5}>
-          {moveUnit ? (
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Stack spacing={1}>
-                <Typography variant="subtitle2">Selected unit</Typography>
-                <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{moveUnit.unit_code}</Typography>
-                <Typography variant="body2">{moveUnit.item_name}</Typography>
-                <Typography variant="caption" color="text.secondary">Available quantity: {moveUnit.quantity} pcs</Typography>
-              </Stack>
-            </Paper>
-          ) : null}
-
-          <Select
-            label="Destination type"
-            value={moveDestinationType}
-            onChange={(event) => {
-              const value = event.target.value as 'shelf' | 'machine';
-              setMoveDestinationType(value);
-              setMoveShelfSlotId('');
-              setMoveMachineId('');
-              setMoveRackId('');
-            }}
-            options={[
-              { value: 'shelf', label: 'Storage cell' },
-              { value: 'machine', label: 'Another machine' },
-            ]}
-          />
-
-          {moveDestinationType === 'shelf' ? (
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Select
-                  label="Destination rack"
-                  value={moveRackId}
-                  onChange={(event) => {
-                    setMoveRackId(event.target.value);
-                    setMoveShelfSlotId('');
-                  }}
-                  options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: `${rack.code} - ${rack.label}` }))]}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Select
-                  label="Destination cell"
-                  value={moveShelfSlotId}
-                  onChange={(event) => setMoveShelfSlotId(event.target.value)}
-                  options={[{ value: '', label: 'Select cell' }, ...availableMoveShelves]}
-                />
-              </Grid>
-            </Grid>
-          ) : (
-            <Select
-              label="Destination machine"
-              value={moveMachineId}
-              onChange={(event) => setMoveMachineId(event.target.value)}
-              options={[{ value: '', label: 'Select machine' }, ...machines.map((entry) => ({ value: entry.id, label: `${entry.code} - ${entry.name}` }))]}
+      {/* Move modal */}
+      <Modal open={moveOpen} onClose={() => setMoveOpen(false)} title={moveItem ? `Move ${moveItem.unit_code}` : 'Move'}>
+        {moveItem && (
+          <>
+            <Typography sx={{ fontSize: 12, mb: 1 }}>
+              {moveItem.item_code} &middot; {moveItem.item_name} &middot; {moveItem.quantity} pcs
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+              <Button variant={moveDestType === 'storage' ? 'primary' : 'secondary'} onClick={() => setMoveDestType('storage')}>
+                Storage cell
+              </Button>
+              <Button variant={moveDestType === 'machine' ? 'primary' : 'secondary'} onClick={() => setMoveDestType('machine')}>
+                Another machine
+              </Button>
+            </Box>
+            {moveDestType === 'storage' ? (
+              <>
+                <TextField fullWidth size="small" select label="Destination rack" value={moveSelectedRack}
+                  onChange={e => { setMoveSelectedRack(e.target.value); setMoveSelectedSlot(''); }}
+                  slotProps={{ select: { native: true } }} sx={{ mb: 1 }}>
+                  <option value="">Select rack...</option>
+                  {moveRacks.map(r => <option key={r.id} value={r.id}>{r.code} - {r.label}</option>)}
+                </TextField>
+                {moveRackDetail && (
+                  <TextField fullWidth size="small" select label="Storage cell" value={moveSelectedSlot}
+                    onChange={e => setMoveSelectedSlot(e.target.value)}
+                    slotProps={{ select: { native: true } }} sx={{ mb: 1 }}>
+                    <option value="">Select cell...</option>
+                    {moveRackDetail.shelves
+                      .filter(s => s.current_count < s.capacity)
+                      .map(s => (
+                        <option key={s.id} value={s.id}>
+                          R{s.row_number}C{s.column_number} ({s.capacity - s.current_count} free)
+                        </option>
+                      ))}
+                  </TextField>
+                )}
+              </>
+            ) : (
+              <TextField fullWidth size="small" select label="Destination machine" value={moveSelectedMachine}
+                onChange={e => setMoveSelectedMachine(e.target.value)}
+                slotProps={{ select: { native: true } }} sx={{ mb: 1 }}>
+                <option value="">Select machine...</option>
+                {moveMachines.filter(m => m.id !== id).map(m => <option key={m.id} value={m.id}>{m.code} - {m.name}</option>)}
+              </TextField>
+            )}
+            <TextField fullWidth size="small" type="number" label="Quantity" value={moveQty}
+              onChange={e => setMoveQty(Math.max(1, Math.min(moveItem.quantity, +e.target.value)))}
+              slotProps={{ htmlInput: { min: 1, max: moveItem.quantity } }}
+              sx={{ mb: 1 }}
             />
-          )}
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Input
-                label={moveUnit ? `Quantity to move (max ${moveUnit.quantity})` : 'Quantity to move'}
-                type="number"
-                value={String(moveQuantity)}
-                disabled={!moveUnit}
-                onChange={(event) => setMoveQuantity(Math.max(1, Math.min(moveUnit?.quantity || 1, Number(event.target.value) || 1)))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Input label="Worker name" value={moveWorkerName} onChange={(event) => setMoveWorkerName(event.target.value)} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField
-                label="Notes"
-                value={moveNotes}
-                onChange={(event) => setMoveNotes(event.target.value)}
-                multiline
-                minRows={2}
-                fullWidth
-                placeholder="Transfer, setup, fault isolation, etc."
-              />
-            </Grid>
-          </Grid>
-        </Stack>
+            <TextField fullWidth size="small" label="Notes" value={moveNotes}
+              onChange={e => setMoveNotes(e.target.value)} multiline rows={2}
+            />
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+              <Button variant="secondary" onClick={() => setMoveOpen(false)}>Cancel</Button>
+              <Button variant="primary" onClick={handleMove}
+                disabled={!workerName || (moveDestType === 'storage' ? !moveSelectedSlot : !moveSelectedMachine)}>
+                Confirm move
+              </Button>
+            </Box>
+          </>
+        )}
       </Modal>
-
-      <Modal
-        open={statusOpen}
-        title={statusUnit ? `Update status for ${statusUnit.unit_code}` : 'Update status'}
-        confirmLabel={statusSubmitting ? 'Saving...' : 'Save status'}
-        confirmDisabled={!canSubmitStatus}
-        onConfirm={handleStatusUpdate}
-        onClose={() => setStatusOpen(false)}
-      >
-        <Stack spacing={2.5} pt={0.5}>
-          {statusUnit ? (
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Stack spacing={1}>
-                <Typography variant="subtitle2">Selected unit</Typography>
-                <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{statusUnit.unit_code}</Typography>
-                <Typography variant="body2">{statusUnit.item_name}</Typography>
-                <Badge variant={machineStatusVariant(statusUnit.status)}>{machineAssignmentStatusLabel(statusUnit.status)}</Badge>
-              </Stack>
-            </Paper>
-          ) : null}
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Select
-                label="New status"
-                value={nextStatus}
-                onChange={(event) => setNextStatus(event.target.value)}
-                options={MACHINE_STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Input label="Worker name" value={statusWorkerName} onChange={(event) => setStatusWorkerName(event.target.value)} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField
-                label="Notes"
-                value={statusNotes}
-                onChange={(event) => setStatusNotes(event.target.value)}
-                multiline
-                minRows={2}
-                fullWidth
-                placeholder="Fault details, operator notes, next action, etc."
-              />
-            </Grid>
-          </Grid>
-        </Stack>
-      </Modal>
-
-      <Modal
-        open={importOpen}
-        title={`Import units to ${machine.code}`}
-        confirmLabel={importSubmitting ? 'Importing...' : 'Import unit'}
-        confirmDisabled={!canImportUnit}
-        onConfirm={handleImportUnit}
-        onClose={() => setImportOpen(false)}
-      >
-        <Stack spacing={2.5} pt={0.5}>
-          <Input
-            label="Search items or unit code"
-            value={importQuery}
-            onChange={(event) => setImportQuery(event.target.value)}
-            placeholder="Item code, item name, customer, or unit code"
-          />
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 5 }}>
-              <Paper variant="outlined" sx={{ minHeight: 280, maxHeight: 420, overflow: 'auto' }}>
-                <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
-                  <Typography variant="subtitle2">Search results</Typography>
-                </Box>
-                {importSearchLoading ? (
-                  <Stack direction="row" spacing={1} alignItems="center" px={2} py={2}>
-                    <LoadingSpinner />
-                    <Typography variant="body2" color="text.secondary">Searching...</Typography>
-                  </Stack>
-                ) : importResults.length === 0 ? (
-                  <Box px={2} py={2}>
-                    <Typography variant="body2" color="text.secondary">Search for an item in storage to import units.</Typography>
-                  </Box>
-                ) : (
-                  <Stack divider={<Divider />}>
-                    {importResults.map((item) => (
-                      <Box
-                        key={item.id}
-                        px={2}
-                        py={1.5}
-                        sx={{
-                          cursor: 'pointer',
-                          bgcolor: selectedImportItem?.id === item.id ? 'primary.50' : 'background.paper',
-                          borderLeft: selectedImportItem?.id === item.id ? '3px solid' : '3px solid transparent',
-                          borderLeftColor: selectedImportItem?.id === item.id ? 'primary.main' : 'transparent',
-                        }}
-                        onClick={() => void selectImportItem(item)}
-                      >
-                        <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{item.item_code}</Typography>
-                        <Typography variant="body2">{item.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{item.customer_name || 'General stock'}</Typography>
-                      </Box>
-                    ))}
-                  </Stack>
-                )}
-              </Paper>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 7 }}>
-              <Paper variant="outlined" sx={{ minHeight: 280, maxHeight: 420, overflow: 'auto' }}>
-                <Box px={2} py={1.5} borderBottom={1} borderColor="divider">
-                  <Typography variant="subtitle2">Storage units</Typography>
-                  {selectedImportItem ? <Typography variant="caption" color="text.secondary">{selectedImportItem.name}</Typography> : null}
-                </Box>
-
-                {importItemLoading ? (
-                  <Stack direction="row" spacing={1} alignItems="center" px={2} py={2}>
-                    <LoadingSpinner />
-                    <Typography variant="body2" color="text.secondary">Loading storage units...</Typography>
-                  </Stack>
-                ) : !selectedImportItem ? (
-                  <Box px={2} py={2}>
-                    <Typography variant="body2" color="text.secondary">Choose an item from the left to see importable units.</Typography>
-                  </Box>
-                ) : importableUnits.length === 0 ? (
-                  <Box px={2} py={2}>
-                    <Typography variant="body2" color="text.secondary">This item has no active storage units available for import.</Typography>
-                  </Box>
-                ) : (
-                  <Stack divider={<Divider />}>
-                    {importableUnits.map((unit) => {
-                      const selected = selectedImportUnit?.assignment_id === unit.assignment_id;
-                      return (
-                        <Box
-                          key={unit.assignment_id}
-                          px={2}
-                          py={1.5}
-                          sx={{
-                            cursor: 'pointer',
-                            bgcolor: selected ? 'primary.50' : 'background.paper',
-                            borderLeft: '3px solid',
-                            borderLeftColor: selected ? 'primary.main' : 'transparent',
-                          }}
-                          onClick={() => handleSelectImportUnit(unit)}
-                        >
-                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                            <Box>
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                {selected ? <CheckCircleIcon color="primary" sx={{ fontSize: 18 }} /> : <RadioButtonUncheckedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
-                                <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{unit.unit_code}</Typography>
-                                {selected ? <Chip label="Selected" size="small" color="primary" variant="outlined" /> : null}
-                              </Stack>
-                              <Box mt={0.5}><LocationBadge location={unit} /></Box>
-                              {unit.parent_unit_code ? <Typography variant="caption" color="text.secondary">Split from {unit.parent_unit_code}</Typography> : null}
-                            </Box>
-                            <Typography variant="caption" color="text.secondary">{unit.quantity} pcs</Typography>
-                          </Stack>
-                        </Box>
-                      );
-                    })}
-                  </Stack>
-                )}
-              </Paper>
-            </Grid>
-          </Grid>
-
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack spacing={2}>
-              <Box>
-                <Typography variant="subtitle2">Selected unit</Typography>
-                {selectedImportUnit ? (
-                  <Stack spacing={0.75} mt={1}>
-                    <Typography variant="body2" fontFamily="monospace" fontWeight={600}>{selectedImportUnit.unit_code}</Typography>
-                    <LocationBadge location={selectedImportUnit} />
-                    <Typography variant="caption" color="text.secondary">Available quantity: {selectedImportUnit.quantity} pcs</Typography>
-                  </Stack>
-                ) : (
-                  <Typography variant="body2" color="text.secondary" mt={1}>Select one storage unit from the list above.</Typography>
-                )}
-              </Box>
-
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Input
-                    label={selectedImportUnit ? `Quantity to import (max ${selectedImportUnit.quantity})` : 'Quantity to import'}
-                    type="number"
-                    disabled={!selectedImportUnit}
-                    value={String(importQuantity)}
-                    onChange={(event) => setImportQuantity(Math.max(1, Math.min(selectedImportUnit?.quantity || 1, Number(event.target.value) || 1)))}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Input label="Worker name" value={importWorkerName} onChange={(event) => setImportWorkerName(event.target.value)} />
-                </Grid>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField
-                    label="Notes"
-                    value={importNotes}
-                    onChange={(event) => setImportNotes(event.target.value)}
-                    multiline
-                    minRows={2}
-                    fullWidth
-                    placeholder="Setup, batching, priority, etc."
-                  />
-                </Grid>
-              </Grid>
-
-              <Typography variant="caption" color="text.secondary">
-                {!selectedImportUnit
-                  ? 'Choose a storage unit first.'
-                  : !importWorkerName.trim()
-                    ? 'Enter worker name to enable import.'
-                    : 'Ready to import the selected unit into this machine.'}
-              </Typography>
-            </Stack>
-          </Paper>
-        </Stack>
-      </Modal>
-    </Stack>
+    </Box>
   );
 }

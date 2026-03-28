@@ -3,9 +3,6 @@ import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
 import { asyncHandler } from '../middleware/asyncHandler';
-import {
-  getDefaultMachineAssignmentStatus,
-} from '../lib/machineAssignmentStatus';
 import { buildRackCellLabel, buildRackLocationCode } from '../lib/rackCells';
 import { buildTrackingUnitMoveNote, getNextTrackingUnitCode, resolveMoveQuantity } from '../lib/trackingUnits';
 
@@ -434,7 +431,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
   // Machine locations
   const machineResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.status, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
+    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
       m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
     FROM machine_assignments ma
     JOIN machines m ON ma.machine_id = m.id
@@ -479,7 +476,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
         ma.quantity,
         ma.assigned_at AS assigned_at,
         ma.assigned_by AS assigned_by,
-        ma.status,
+        NULL::text AS status,
         NULL::uuid AS shelf_slot_id,
         NULL::uuid AS rack_id,
         NULL::text AS rack_code,
@@ -497,48 +494,6 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
     ORDER BY assigned_at DESC, unit_code ASC
   `, [id]);
 
-  const productionHistoryResult = await pool.query(`
-    SELECT *
-    FROM (
-      SELECT
-        pj.id AS job_id,
-        pj.job_code,
-        pj.machine_id,
-        m.code AS machine_code,
-        m.name AS machine_name,
-        'input'::text AS role,
-        pji.unit_code,
-        pji.consumed_quantity AS quantity,
-        pji.outcome,
-        pj.completed_at,
-        pj.created_at
-      FROM production_job_inputs pji
-      JOIN production_jobs pj ON pji.production_job_id = pj.id
-      JOIN machines m ON pj.machine_id = m.id
-      WHERE pji.item_id = $1
-
-      UNION ALL
-
-      SELECT
-        pj.id AS job_id,
-        pj.job_code,
-        pj.machine_id,
-        m.code AS machine_code,
-        m.name AS machine_name,
-        'output'::text AS role,
-        pjo.unit_code,
-        pjo.quantity,
-        pjo.outcome,
-        pj.completed_at,
-        pj.created_at
-      FROM production_job_outputs pjo
-      JOIN production_jobs pj ON pjo.production_job_id = pj.id
-      JOIN machines m ON pj.machine_id = m.id
-      WHERE pjo.item_id = $1
-    ) production_history
-    ORDER BY COALESCE(completed_at, created_at) DESC
-  `, [id]);
-
   // Activity history
   const historyResult = await pool.query(`
     SELECT * FROM activity_log
@@ -552,7 +507,6 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
       current_location: locationResult.rows[0] || null,
       machine_locations: machineResult.rows,
       tracking_units: trackingUnitsResult.rows,
-      production_history: productionHistoryResult.rows,
       activity_history: historyResult.rows,
     },
   });
@@ -939,9 +893,9 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       // Create machine assignment at target
       newAssignmentId = uuidv4();
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, status, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`,
-        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, getDefaultMachineAssignmentStatus(), moveQty, performed_by, notes || null]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
+        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, moveQty, performed_by, notes || null]
       );
     } else {
       // --- Destination is a shelf ---

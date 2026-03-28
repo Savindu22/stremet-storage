@@ -39,19 +39,11 @@ storage_assignments(id UUID PK, item_id FK->items, shelf_slot_id FK->shelf_slots
 machines(id UUID PK, name, code UNIQUE, category, description)
 
 -- machine_assignments: Items currently at a machine. Active if removed_at IS NULL.
-machine_assignments(id UUID PK, item_id FK->items, machine_id FK->machines, unit_code, parent_unit_code nullable, status [queued|processing|needs_attention|ready_for_storage], quantity, assigned_at, assigned_by, removed_at nullable, removed_by nullable, notes)
-
--- production_jobs: Manufacturing workflow tracking
-production_jobs(id UUID PK, job_code UNIQUE, machine_id FK->machines, status [draft|in_progress|completed|cancelled], assigned_by, completed_by, started_at, completed_at, notes, result_summary)
-
--- production_job_inputs: Items consumed by a production job
-production_job_inputs(id UUID PK, production_job_id FK, machine_assignment_id FK, item_id FK, unit_code, planned_quantity, consumed_quantity, outcome [planned|consumed|partial])
-
--- production_job_outputs: Items produced by a production job
-production_job_outputs(id UUID PK, production_job_id FK, item_id FK, unit_code, output_type [storage|machine|none], storage_assignment_id FK nullable, machine_assignment_id FK nullable, quantity, outcome [good|scrap|rework|hold], created_by)
+-- Machines are treated as locations — items move to/from machines just like shelves.
+machine_assignments(id UUID PK, item_id FK->items, machine_id FK->machines, unit_code, parent_unit_code nullable, quantity, assigned_at, assigned_by, removed_at nullable, removed_by nullable, notes)
 
 -- activity_log: Audit trail of all actions
-activity_log(id UUID PK, item_id FK->items, action [check_in|check_out|move|note_added|job_created|job_started|job_completed|job_cancelled|unit_consumed|unit_produced|unit_scrapped|unit_reworked|unit_held], production_job_id FK nullable, tracking_unit_code nullable, machine_id FK nullable, from_location, to_location, performed_by, notes, created_at)
+activity_log(id UUID PK, item_id FK->items, action [check_in|check_out|move|note_added], tracking_unit_code nullable, machine_id FK nullable, from_location, to_location, performed_by, notes, created_at)
 
 KEY QUERY PATTERNS:
 - Find where an item is stored: JOIN storage_assignments (WHERE checked_out_at IS NULL) -> shelf_slots -> racks -> zones

@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildRackTypeFromZone } from '../lib/rackCells';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
 
 // --- Helpers ---
 
@@ -105,7 +104,6 @@ const WORKERS = [
   'Lauri Koskinen',
 ];
 
-const MACHINE_ASSIGNMENT_STATUSES: MachineAssignmentStatus[] = ['queued', 'processing', 'needs_attention', 'ready_for_storage'];
 
 async function seed(): Promise<void> {
   const client = await pool.connect();
@@ -455,12 +453,10 @@ async function seed(): Promise<void> {
       const nextUnitSequence = (trackingUnitSequenceByItemId[item.id] || 0) + 1;
       trackingUnitSequenceByItemId[item.id] = nextUnitSequence;
       const unitCode = buildTrackingUnitCode(item.code, nextUnitSequence);
-      const status = randomChoice(MACHINE_ASSIGNMENT_STATUSES) || getDefaultMachineAssignmentStatus();
-
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [id, item.id, machineIds[machine.code], unitCode, status, qty, date, worker, randomChoice([null, 'Processing', 'Waiting for setup', 'In queue'])]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, item.id, machineIds[machine.code], unitCode, qty, date, worker, randomChoice([null, 'Processing', 'Waiting for setup', 'In queue'])]
       );
 
       // Activity log entry for the machine assignment

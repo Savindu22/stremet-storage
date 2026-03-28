@@ -7,8 +7,6 @@ import type {
   AssistantResponse,
   CheckInRequest,
   CheckOutRequest,
-  CompleteProductionJobRequest,
-  CreateProductionJobRequest,
   CreateItemRequest,
   Customer,
   DuplicateWarning,
@@ -20,8 +18,6 @@ import type {
   LocationSuggestion,
   MachineWithItemCount,
   MoveRequest,
-  ProductionJobDetail,
-  ProductionJobSummary,
   RackWithStats,
   RackWithShelves,
   UpdateItemRequest,
@@ -40,7 +36,6 @@ type MoveResult = {
   quantity_moved: number;
   quantity_remaining: number;
 };
-type MachineStatusUpdateResult = { assignment_id: string; unit_code: string; status: string };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
 
@@ -119,35 +114,6 @@ export const api = {
   getMachines: () => request<ApiResponse<MachineWithItemCount[]>>('/machines'),
 
   getMachine: (id: string) => request<ApiResponse<MachineDetail>>(`/machines/${id}`),
-
-  getProductionJobs: (filters: { machine_id?: string; status?: string } = {}) =>
-    request<ApiResponse<ProductionJobSummary[]>>(`/production-jobs?${buildQueryString(filters)}`),
-
-  getProductionJob: (id: string) => request<ApiResponse<ProductionJobDetail>>(`/production-jobs/${id}`),
-
-  createProductionJob: (body: CreateProductionJobRequest) =>
-    request<ApiResponse<ProductionJobSummary>>('/production-jobs', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  startProductionJob: (id: string, body: { performed_by: string }) =>
-    request<ApiResponse<{ id: string; status: string }>>(`/production-jobs/${id}/start`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  completeProductionJob: (id: string, body: CompleteProductionJobRequest) =>
-    request<ApiResponse<ProductionJobSummary>>(`/production-jobs/${id}/complete`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  updateMachineAssignmentStatus: (machineId: string, assignmentId: string, body: { status: string; performed_by: string; notes?: string }) =>
-    request<ApiResponse<MachineStatusUpdateResult>>(`/machines/${machineId}/assignments/${assignmentId}/status`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
 
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 
