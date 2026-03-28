@@ -15,12 +15,12 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
 
 export function Select({ label, className, id, options, ...props }: SelectProps) {
   return (
-    <label className="flex w-full flex-col gap-1 text-xs font-medium text-app-textMuted" htmlFor={id}>
-      {label ? <span className="uppercase tracking-wider text-app-text">{label}</span> : null}
+    <label className="flex w-full flex-col gap-1 text-sm text-app-textMuted" htmlFor={id}>
+      {label ? <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">{label}</span> : null}
       <select
         id={id}
         className={cn(
-          'min-h-11 border border-app-border bg-white px-3 py-2 text-sm text-app-text shadow-inset outline-none focus:border-app-primary focus:ring-1 focus:ring-app-primary',
+          'min-h-9 border border-app-border bg-[linear-gradient(180deg,#edf2f7_0%,#fafbfd_100%)] px-2.5 py-1.5 text-[13px] text-app-text shadow-inset outline-none focus:border-app-primary',
           className,
         )}
         {...props}

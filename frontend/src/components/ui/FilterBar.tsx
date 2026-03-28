@@ -10,9 +10,9 @@ type FilterBarProps = {
 
 export function FilterBar({ children, onClear }: FilterBarProps) {
   return (
-    <div className="flex flex-col gap-3 border border-app-border bg-app-toolbar p-3 shadow-panel lg:flex-row lg:items-end lg:justify-between">
-      <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-4">{children}</div>
-      <Button variant="secondary" onClick={onClear}>
+    <div className="app-frame flex flex-col gap-2 p-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="grid flex-1 gap-2 md:grid-cols-2 xl:grid-cols-4">{children}</div>
+      <Button variant="secondary" className="shrink-0 lg:self-end" onClick={onClear}>
         Clear filters
       </Button>
     </div>

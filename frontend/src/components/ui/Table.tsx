@@ -23,16 +23,16 @@ type TableProps<T> = {
 
 export function Table<T>({ columns, data, sortBy, sortOrder, onSort, rowKey, onRowClick }: TableProps<T>) {
   return (
-    <div className="overflow-x-auto border border-app-border shadow-panel">
+    <div className="app-frame overflow-x-auto">
       <table className="min-w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-app-navBg text-left text-xs uppercase tracking-wider text-app-navText">
+          <tr className="bg-[linear-gradient(180deg,#5d6b7b_0%,#4a5665_100%)] text-left text-xs text-app-navText">
             {columns.map((column) => (
-              <th key={column.key} className={cn('border-b border-slate-600 px-3 py-2.5 font-medium', column.className)}>
+              <th key={column.key} className={cn('border-b border-[#47525d] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.05em]', column.className)}>
                 {column.sortable && onSort ? (
-                  <button className="inline-flex items-center gap-1 hover:text-white" onClick={() => onSort(column.key)} type="button">
+                  <button className="inline-flex items-center gap-1 text-left hover:text-white" onClick={() => onSort(column.key)} type="button">
                     {column.header}
-                    <span className="text-slate-500">{sortBy === column.key ? (sortOrder === 'asc' ? ' \u25B2' : ' \u25BC') : ' \u25C6'}</span>
+                    <span className="text-[#d4dde4]">{sortBy === column.key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ' ◆'}</span>
                   </button>
                 ) : (
                   column.header
@@ -41,19 +41,19 @@ export function Table<T>({ columns, data, sortBy, sortOrder, onSort, rowKey, onR
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white">
+        <tbody className="bg-app-panel">
           {data.map((row, index) => (
             <tr
               key={rowKey(row)}
               className={cn(
                 'border-b border-app-borderLight last:border-b-0',
-                index % 2 === 1 && 'bg-gray-50',
-                onRowClick && 'cursor-pointer hover:bg-blue-50',
+                index % 2 === 1 && 'bg-[#f2f5f8]',
+                onRowClick && 'cursor-pointer hover:bg-[#e1ecf5]',
               )}
               onClick={() => onRowClick?.(row)}
             >
               {columns.map((column) => (
-                <td key={column.key} className={cn('px-3 py-2 align-top text-app-text', column.className)}>
+                <td key={column.key} className={cn('px-3 py-2.5 align-top text-app-text', column.className)}>
                   {column.render(row)}
                 </td>
               ))}

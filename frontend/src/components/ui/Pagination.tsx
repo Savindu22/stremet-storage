@@ -16,20 +16,20 @@ export function Pagination({ currentPage, perPage, total, onPageChange }: Pagina
   const pages = Array.from({ length: end - start + 1 }, (_, idx) => start + idx);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border border-app-border bg-app-toolbar px-3 py-2 shadow-panel">
-      <p className="font-mono text-xs text-app-textMuted">
+    <div className="app-frame flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+      <p className="text-[11px] font-medium text-app-textMuted">
         Page {currentPage} of {totalPages} ({total} records)
       </p>
-      <div className="flex items-center gap-1">
-        <Button variant="secondary" className="min-h-9 px-3 py-1 text-xs" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" className="min-h-8 px-2.5 py-1 text-[11px]" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>
           Prev
         </Button>
         {pages.map((page) => (
-          <Button key={page} variant={page === currentPage ? 'primary' : 'secondary'} className="min-h-9 min-w-9 px-2 py-1 text-xs" onClick={() => onPageChange(page)}>
+          <Button key={page} variant={page === currentPage ? 'primary' : 'secondary'} className="min-h-8 min-w-8 px-2 py-1 text-[11px]" onClick={() => onPageChange(page)}>
             {page}
           </Button>
         ))}
-        <Button variant="secondary" className="min-h-9 px-3 py-1 text-xs" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>
+        <Button variant="secondary" className="min-h-8 px-2.5 py-1 text-[11px]" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>
           Next
         </Button>
       </div>

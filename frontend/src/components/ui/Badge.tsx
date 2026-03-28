@@ -7,19 +7,21 @@ type BadgeProps = {
 };
 
 export function Badge({ children, variant = 'default', className }: BadgeProps) {
+  const text = children === children.toUpperCase() ? children : toTitleCase(children);
+
   return (
     <span
       className={cn(
-        'inline-flex items-center border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide',
+        'inline-flex items-center border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]',
         variant === 'default' && 'border-app-border bg-app-panelMuted text-app-textMuted',
-        variant === 'primary' && 'border-blue-300 bg-blue-100 text-app-primary',
-        variant === 'success' && 'border-green-300 bg-green-100 text-app-success',
-        variant === 'warning' && 'border-amber-300 bg-amber-100 text-app-warning',
-        variant === 'danger' && 'border-red-300 bg-red-100 text-app-danger',
+        variant === 'primary' && 'border-[#7b98b2] bg-[#d7e4ef] text-app-primary',
+        variant === 'success' && 'border-[#8fb39a] bg-[#e6f0e8] text-app-success',
+        variant === 'warning' && 'border-[#c0b28e] bg-[#f3f1ea] text-app-warning',
+        variant === 'danger' && 'border-[#d0aaa3] bg-[#f5e9e6] text-app-danger',
         className,
       )}
     >
-      {toTitleCase(children)}
+      {text}
     </span>
   );
 }

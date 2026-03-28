@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import type { ItemDetail } from '@shared/types';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge } from '@/components/ui/LocationBadge';
-import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
-import type { ItemDetail } from '@shared/types';
+import { api } from '@/lib/api';
 
 export default function CheckOutPage() {
   const params = useParams<{ id: string }>();
@@ -26,6 +26,7 @@ export default function CheckOutPage() {
     if (!params.id) {
       return;
     }
+
     void api
       .getItem(params.id)
       .then((response) => setItem(response.data))
@@ -57,9 +58,9 @@ export default function CheckOutPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 border border-app-border bg-white p-4">
+      <div className="app-frame-soft flex items-center gap-2 px-3 py-3">
         <LoadingSpinner />
-        <span className="text-xs text-app-textMuted">Loading item...</span>
+        <span className="text-[13px] text-app-textMuted">Loading item...</span>
       </div>
     );
   }
@@ -69,46 +70,40 @@ export default function CheckOutPage() {
   }
 
   return (
-    <div className="space-y-3 py-3">
-      <div className="border-b border-app-border bg-app-toolbar px-3 py-2">
-        <h1 className="text-sm font-semibold text-app-text">Check out</h1>
-      </div>
-
-      <section className="border border-app-border bg-white">
-        <div className="border-b border-app-border bg-app-toolbar px-4 py-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-app-text">Item</h2>
+    <div className="space-y-2.5">
+      <section className="app-frame flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <div className="min-w-0 space-y-1">
+          <h1 className="app-page-title">Check out item</h1>
+          <div className="flex flex-wrap items-center gap-3 text-[13px] text-app-textMuted">
+            <span className="font-data text-app-text">{item.item_code}</span>
+            <span>{item.name}</span>
+          </div>
         </div>
-        <div className="p-4">
-          <dl className="grid gap-3 md:grid-cols-2">
-            <div>
-              <dt className="text-xs text-app-textMuted">Item</dt>
-              <dd className="mt-0.5 font-mono text-sm text-app-text">{item.item_code} - {item.name}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-app-textMuted">Current location</dt>
-              <dd className="mt-0.5"><LocationBadge location={item.current_location} /></dd>
-            </div>
-          </dl>
+        <LocationBadge location={item.current_location} />
+      </section>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
-            <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wider text-app-text">
-              <span>Notes</span>
-              <textarea className="border border-app-border px-3 py-2 text-sm text-app-text shadow-inset outline-none focus:border-app-primary" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Shipped to customer, moved to production, etc." />
-            </label>
+      <section className="app-frame px-3 py-3">
+        <div className="app-panel-grid md:grid-cols-2">
+          <div className="px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Worker name</div>
+            <div className="mt-2">
+              <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
+            </div>
           </div>
+          <div className="px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Notes</div>
+            <textarea className="app-textarea mt-2 w-full" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Shipped to customer, moved to production, quality hold, etc." />
+          </div>
+        </div>
 
-          <div className="mt-4 flex justify-end">
-            <Button variant="danger" onClick={() => void handleSubmit()} disabled={submitting}>
-              {submitting ? 'Checking out...' : 'Confirm check-out'}
-            </Button>
-          </div>
+        <div className="mt-3 flex justify-end">
+          <Button variant="danger" onClick={() => void handleSubmit()} disabled={submitting}>
+            {submitting ? 'Checking out...' : 'Confirm check-out'}
+          </Button>
         </div>
       </section>
 
-      {successMessage ? (
-        <section className="border-2 border-app-success bg-green-50 p-4 font-mono text-xs text-app-success">{successMessage}</section>
-      ) : null}
+      {successMessage ? <div className="app-frame-soft px-3 py-2 text-[13px] text-app-success">{successMessage}</div> : null}
     </div>
   );
 }

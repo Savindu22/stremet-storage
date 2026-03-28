@@ -9,9 +9,8 @@ import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge } from '@/components/ui/LocationBadge';
 import { Select } from '@/components/ui/Select';
-import { api, type ZoneDetail } from '@/lib/api';
-import { locationLabel } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
+import { api, type ZoneDetail } from '@/lib/api';
 
 type FlowState = 'lookup' | 'duplicate' | 'details' | 'location' | 'confirm' | 'success';
 
@@ -22,6 +21,12 @@ const blankNewItem: CreateItemRequest = {
   type: 'customer_order',
   quantity: 1,
 };
+
+const stepLabels = ['Look up', 'Duplicate', 'Details', 'Location', 'Confirm', 'Done'] as const;
+
+function getCurrentStep(flow: FlowState) {
+  return { lookup: 0, duplicate: 1, details: 2, location: 3, confirm: 4, success: 5 }[flow];
+}
 
 export default function CheckInPage() {
   const { showToast } = useToast();
@@ -64,6 +69,7 @@ export default function CheckInPage() {
       setZoneDetail(null);
       return;
     }
+
     void api.getZone(selectedZoneId).then((response) => setZoneDetail(response.data));
   }, [selectedZoneId]);
 
@@ -90,12 +96,21 @@ export default function CheckInPage() {
     () =>
       zoneDetail?.racks.flatMap((rack) =>
         rack.shelves
-          .filter((shelf) => (preselectedRackId ? rack.id === preselectedRackId : true))
+          .filter(() => (preselectedRackId ? rack.id === preselectedRackId : true))
           .filter((shelf) => shelf.current_count < shelf.capacity)
           .map((shelf) => ({ value: shelf.id, label: `${rack.code} > Shelf ${shelf.shelf_number} (${shelf.capacity - shelf.current_count} free)` })),
       ) || [],
     [preselectedRackId, zoneDetail],
   );
+
+  const selectedLocationLabel = useMemo(() => {
+    const suggested = suggestions.find((suggestion) => suggestion.shelf_slot_id === selectedShelfSlotId);
+    if (suggested) {
+      return `${suggested.zone_code} > ${suggested.rack_code} > Shelf ${suggested.shelf_number}`;
+    }
+
+    return manualShelfOptions.find((option) => option.value === selectedShelfSlotId)?.label || 'Select a shelf';
+  }, [manualShelfOptions, selectedShelfSlotId, suggestions]);
 
   async function handleLookup() {
     if (!lookupCode.trim()) {
@@ -126,10 +141,9 @@ export default function CheckInPage() {
       if (exactMatch) {
         const suggestionResponse = await api.getSuggestedLocations(exactMatch.id);
         setSuggestions(suggestionResponse.data);
-        setFlow('details');
-      } else {
-        setFlow('details');
       }
+
+      setFlow('details');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Lookup failed', 'error');
     } finally {
@@ -139,8 +153,10 @@ export default function CheckInPage() {
 
   async function continueFromDetails() {
     if (existingItem) {
-      const suggestionResponse = await api.getSuggestedLocations(existingItem.id);
-      setSuggestions(suggestionResponse.data);
+      if (suggestions.length === 0) {
+        const suggestionResponse = await api.getSuggestedLocations(existingItem.id);
+        setSuggestions(suggestionResponse.data);
+      }
       setFlow('location');
       return;
     }
@@ -189,202 +205,220 @@ export default function CheckInPage() {
   }
 
   return (
-    <div className="space-y-3 py-3">
-      <div className="border-b border-app-border bg-app-toolbar px-3 py-2">
-        <h1 className="text-sm font-semibold text-app-text">Check in</h1>
-      </div>
+    <div className="space-y-2.5">
+      <section className="app-frame px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="app-page-title">Check in item</h1>
+            <span className="text-[11px] uppercase tracking-[0.06em] text-app-textMuted">Receiving flow</span>
+          </div>
+          <div className="text-[11px] font-medium text-app-textMuted">Step {getCurrentStep(flow) + 1} of {stepLabels.length}</div>
+        </div>
+        <div className="mt-2 grid gap-1 sm:grid-cols-3 xl:grid-cols-6">
+          {stepLabels.map((label, index) => {
+            const active = index === getCurrentStep(flow);
+            const completed = index < getCurrentStep(flow);
 
-      <section className="border border-app-border bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-          <Input label="Item code" value={lookupCode} onChange={(event) => setLookupCode(event.target.value)} placeholder="e.g. KONE-001-PANEL-A" />
-          <Button onClick={handleLookup} disabled={loading}>
-            {loading ? 'Looking up...' : 'Look up'}
-          </Button>
+            return (
+              <div
+                key={label}
+                className={`border px-2.5 py-1.5 text-[12px] ${active ? 'border-app-primary bg-[#eaf1f7] text-app-text' : completed ? 'border-[#b7cfc0] bg-[#edf4ef] text-app-text' : 'border-app-borderLight bg-app-panelMuted text-app-textMuted'}`}
+              >
+                {label}
+              </div>
+            );
+          })}
         </div>
       </section>
 
-      {flow === 'duplicate' && duplicate ? (
-        <section className="border-2 border-app-warning bg-amber-50 p-4">
-          <div className="flex items-center gap-2">
-            <Badge variant="warning">DUPLICATE</Badge>
-            <span className="text-sm font-semibold text-app-text">This item already exists in storage</span>
+      <section className="app-frame px-3 py-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[280px] flex-1">
+            <Input label="Item code" value={lookupCode} onChange={(event) => setLookupCode(event.target.value)} placeholder="KONE-001-PANEL-A" />
           </div>
-          <div className="mt-3 space-y-1 font-mono text-xs text-app-text">
+          <Button onClick={handleLookup} disabled={loading}>{loading ? 'Looking up...' : 'Look up'}</Button>
+        </div>
+        {preselectedZoneId || preselectedRackId || preselectedShelfSlotId ? (
+          <div className="mt-2 text-[12px] text-app-textMuted">Map context is active. The zone or rack selection was prefilled from the storage grid.</div>
+        ) : null}
+      </section>
+
+      {flow === 'duplicate' && duplicate ? (
+        <section className="app-frame px-3 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="warning">Duplicate</Badge>
+            <h2 className="app-section-title">This item code already exists in storage</h2>
+          </div>
+          <div className="app-panel-grid mt-2 md:grid-cols-2">
             {duplicate.existing_locations.map((location, index) => (
-              <p key={`${location.rack_code}-${index}`}>
-                {location.zone_name} &gt; {location.rack_code} &gt; Shelf {location.shelf_number} ({location.quantity})
-              </p>
+              <div key={`${location.rack_code}-${index}`} className="px-3 py-2.5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Stored copy {index + 1}</div>
+                <div className="mt-1 text-[13px] text-app-text">{`${location.zone_name} > ${location.rack_code} > Shelf ${location.shelf_number}`}</div>
+                <div className="mt-1 text-[12px] text-app-textMuted">{location.quantity} units</div>
+              </div>
             ))}
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button onClick={() => setFlow('details')}>Continue anyway</Button>
-            <Button variant="secondary" onClick={() => setFlow('lookup')}>
-              Cancel
-            </Button>
+            <Button variant="secondary" onClick={() => setFlow('lookup')}>Cancel</Button>
           </div>
         </section>
       ) : null}
 
       {(flow === 'details' || flow === 'location' || flow === 'confirm' || flow === 'success') && (
-        <section className="border border-app-border bg-white">
-          <div className="border-b border-app-border bg-app-toolbar px-4 py-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-app-text">Item details</h2>
+        <section className="app-frame px-3 py-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="app-section-title">Item details</h2>
+            {existingItem ? <span className="font-data text-[12px] text-app-text">{existingItem.item_code}</span> : null}
           </div>
-          <div className="p-4">
-            {existingItem ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <p className="text-xs text-app-textMuted">Name</p>
-                  <p className="text-sm text-app-text">{existingItem.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-app-textMuted">Customer</p>
-                  <p className="text-sm text-app-text">{existingItem.customer_name || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-app-textMuted">Material</p>
-                  <p className="text-sm text-app-text">{existingItem.material || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-app-textMuted">Existing location</p>
-                  <div className="mt-0.5"><LocationBadge location={existingItem.current_location} /></div>
-                </div>
+
+          {existingItem ? (
+            <div className="app-panel-grid md:grid-cols-2">
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Name</div>
+                <div className="mt-1 text-[13px] text-app-text">{existingItem.name}</div>
               </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input label="Name" value={newItem.name} onChange={(event) => setNewItem((current) => ({ ...current, name: event.target.value }))} />
-                <Select
-                  label="Customer"
-                  value={newItem.customer_id || ''}
-                  onChange={(event) => setNewItem((current) => ({ ...current, customer_id: event.target.value || undefined }))}
-                  options={[{ label: 'No customer', value: '' }, ...customers.map((customer) => ({ label: customer.name, value: customer.id }))]}
-                />
-                <Input label="Material" value={newItem.material} onChange={(event) => setNewItem((current) => ({ ...current, material: event.target.value }))} />
-                <Select
-                  label="Type"
-                  value={newItem.type}
-                  onChange={(event) => setNewItem((current) => ({ ...current, type: event.target.value as CreateItemRequest['type'] }))}
-                  options={[
-                    { label: 'Customer order', value: 'customer_order' },
-                    { label: 'General stock', value: 'general_stock' },
-                  ]}
-                />
-                <Input label="Dimensions" value={newItem.dimensions || ''} onChange={(event) => setNewItem((current) => ({ ...current, dimensions: event.target.value }))} />
-                <Input label="Weight (kg)" type="number" value={newItem.weight_kg || ''} onChange={(event) => setNewItem((current) => ({ ...current, weight_kg: Number(event.target.value) || 0 }))} />
-                <Input label="Order number" value={newItem.order_number || ''} onChange={(event) => setNewItem((current) => ({ ...current, order_number: event.target.value }))} />
-                <Input label="Quantity" type="number" min="1" value={String(newItem.quantity)} onChange={(event) => setNewItem((current) => ({ ...current, quantity: Number(event.target.value) || 1 }))} />
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Customer</div>
+                <div className="mt-1 text-[13px] text-app-text">{existingItem.customer_name || '-'}</div>
               </div>
-            )}
-            {flow === 'details' ? (
-              <div className="mt-4 flex justify-end">
-                <Button onClick={() => void continueFromDetails()}>Continue to location</Button>
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Material</div>
+                <div className="mt-1 text-[13px] text-app-text">{existingItem.material || '-'}</div>
               </div>
-            ) : null}
-          </div>
+              <div className="px-3 py-2.5">
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Current location</div>
+                <div className="mt-1.5"><LocationBadge location={existingItem.current_location} /></div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              <Input label="Name" value={newItem.name} onChange={(event) => setNewItem((current) => ({ ...current, name: event.target.value }))} />
+              <Select
+                label="Customer"
+                value={newItem.customer_id || ''}
+                onChange={(event) => setNewItem((current) => ({ ...current, customer_id: event.target.value || undefined }))}
+                options={[{ label: 'No customer', value: '' }, ...customers.map((customer) => ({ label: customer.name, value: customer.id }))]}
+              />
+              <Input label="Material" value={newItem.material} onChange={(event) => setNewItem((current) => ({ ...current, material: event.target.value }))} />
+              <Select
+                label="Type"
+                value={newItem.type}
+                onChange={(event) => setNewItem((current) => ({ ...current, type: event.target.value as CreateItemRequest['type'] }))}
+                options={[
+                  { label: 'Customer order', value: 'customer_order' },
+                  { label: 'General stock', value: 'general_stock' },
+                ]}
+              />
+              <Input label="Dimensions" value={newItem.dimensions || ''} onChange={(event) => setNewItem((current) => ({ ...current, dimensions: event.target.value }))} />
+              <Input label="Weight (kg)" type="number" value={newItem.weight_kg || ''} onChange={(event) => setNewItem((current) => ({ ...current, weight_kg: Number(event.target.value) || 0 }))} />
+              <Input label="Order number" value={newItem.order_number || ''} onChange={(event) => setNewItem((current) => ({ ...current, order_number: event.target.value }))} />
+              <Input label="Quantity" type="number" min="1" value={String(newItem.quantity)} onChange={(event) => setNewItem((current) => ({ ...current, quantity: Number(event.target.value) || 1 }))} />
+            </div>
+          )}
+
+          {flow === 'details' ? (
+            <div className="mt-3 flex justify-end">
+              <Button onClick={() => void continueFromDetails()}>Continue to location</Button>
+            </div>
+          ) : null}
         </section>
       )}
 
       {(flow === 'location' || flow === 'confirm' || flow === 'success') && existingItem ? (
-        <section className="border border-app-border bg-white">
-          <div className="border-b border-app-border bg-app-toolbar px-4 py-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-app-text">Location selection</h2>
-          </div>
-          <div className="p-4 space-y-3">
-            {preselectedZoneId || preselectedRackId || preselectedShelfSlotId ? (
-              <div className="border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-app-text">
-                Using location context from the map view.
-              </div>
-            ) : null}
-            {suggestions.length > 0 ? (
-              <>
-                <p className="text-xs font-medium uppercase tracking-wider text-app-textMuted">Smart suggestions</p>
-                <div className="grid gap-2 lg:grid-cols-3">
-                  {suggestions.map((suggestion) => (
+        <section className="app-frame px-3 py-3">
+          <h2 className="app-section-title">Location</h2>
+          <div className="mt-2 grid gap-2 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="space-y-2">
+              {suggestions.length > 0 ? (
+                suggestions.map((suggestion) => {
+                  const selected = selectedShelfSlotId === suggestion.shelf_slot_id;
+
+                  return (
                     <button
                       key={suggestion.shelf_slot_id}
                       type="button"
-                      className={`min-h-11 border p-3 text-left ${selectedShelfSlotId === suggestion.shelf_slot_id ? 'border-2 border-app-primary bg-blue-50' : 'border-app-border bg-app-panelMuted hover:bg-gray-100'}`}
+                      className={`block w-full border px-3 py-2.5 text-left ${selected ? 'border-app-primary bg-[#eaf1f7]' : 'border-app-borderLight bg-app-panel hover:bg-app-panelMuted'}`}
                       onClick={() => {
                         setSelectedShelfSlotId(suggestion.shelf_slot_id);
                         setFlow('confirm');
                       }}
                     >
-                      <p className="font-mono text-sm font-medium text-app-text">
-                        {suggestion.zone_code} &gt; {suggestion.rack_code} &gt; S{suggestion.shelf_number}
-                      </p>
-                      <p className="mt-1 text-xs text-app-textMuted">{suggestion.reason}</p>
+                      <div className="font-data text-[12px] text-app-text">{`${suggestion.zone_code} > ${suggestion.rack_code} > Shelf ${suggestion.shelf_number}`}</div>
+                      <div className="mt-1 text-[12px] text-app-textMuted">{suggestion.reason}</div>
                     </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <EmptyState title="No smart suggestions available" description="Choose a shelf manually." />
-            )}
+                  );
+                })
+              ) : (
+                <EmptyState title="No smart suggestions available" description="Pick a shelf manually." />
+              )}
+            </div>
 
-            <p className="text-xs font-medium uppercase tracking-wider text-app-textMuted">Manual selection</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Select
-                label="Zone"
-                value={selectedZoneId}
-                onChange={(event) => setSelectedZoneId(event.target.value)}
-                options={[{ label: 'Select zone', value: '' }, ...zones.map((zone) => ({ label: `${zone.code} - ${zone.name}`, value: zone.id }))]}
-              />
-              <Select
-                label="Shelf"
-                value={selectedShelfSlotId}
-                onChange={(event) => {
-                  setSelectedShelfSlotId(event.target.value);
-                  if (event.target.value) {
-                    setFlow('confirm');
-                  }
-                }}
-                options={[{ label: 'Select shelf', value: '' }, ...manualShelfOptions]}
-              />
+            <div className="app-frame-soft px-3 py-3">
+              <div className="grid gap-2">
+                <Select
+                  label="Zone"
+                  value={selectedZoneId}
+                  onChange={(event) => setSelectedZoneId(event.target.value)}
+                  options={[{ label: 'Select zone', value: '' }, ...zones.map((zone) => ({ label: `${zone.code} - ${zone.name}`, value: zone.id }))]}
+                />
+                <Select
+                  label="Shelf"
+                  value={selectedShelfSlotId}
+                  onChange={(event) => {
+                    setSelectedShelfSlotId(event.target.value);
+                    if (event.target.value) {
+                      setFlow('confirm');
+                    }
+                  }}
+                  options={[{ label: 'Select shelf', value: '' }, ...manualShelfOptions]}
+                />
+              </div>
             </div>
           </div>
         </section>
       ) : null}
 
       {(flow === 'confirm' || flow === 'success') && existingItem ? (
-        <section className="border border-app-border bg-white">
-          <div className="border-b border-app-border bg-app-toolbar px-4 py-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-app-text">Confirm check-in</h2>
-          </div>
-          <div className="p-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <p className="text-xs text-app-textMuted">Item</p>
-                <p className="font-mono text-sm text-app-text">{existingItem.item_code} - {existingItem.name}</p>
-              </div>
-              <div>
-                <p className="text-xs text-app-textMuted">Selected location</p>
-                <p className="text-sm text-app-text">{selectedShelfSlotId ? 'Shelf selected' : 'Select a shelf above'}</p>
-              </div>
+        <section className="app-frame px-3 py-3">
+          <h2 className="app-section-title">Confirm</h2>
+          <div className="app-panel-grid mt-2 md:grid-cols-2">
+            <div className="px-3 py-2.5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Item</div>
+              <div className="mt-1 text-[13px] text-app-text">{existingItem.name}</div>
+              <div className="font-data mt-1 text-[12px] text-app-text">{existingItem.item_code}</div>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
-              <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wider text-app-text">
-                <span>Notes</span>
-                <textarea className="border border-app-border px-3 py-2 text-sm text-app-text shadow-inset outline-none focus:border-app-primary" value={notes} onChange={(event) => setNotes(event.target.value)} />
-              </label>
+            <div className="px-3 py-2.5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Selected location</div>
+              <div className="mt-1 text-[13px] text-app-text">{selectedLocationLabel}</div>
             </div>
-            {flow !== 'success' ? (
-              <div className="mt-4 flex justify-end">
-                <Button onClick={() => void confirmCheckIn()} disabled={loading}>
-                  {loading ? 'Confirming...' : 'Confirm check-in'}
-                </Button>
-              </div>
-            ) : null}
           </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            <Input label="Worker name" value={workerName} onChange={(event) => setWorkerName(event.target.value)} />
+            <label className="flex flex-col gap-1 text-sm text-app-textMuted">
+              <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Notes</span>
+              <textarea className="app-textarea" value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </label>
+          </div>
+          {flow !== 'success' ? (
+            <div className="mt-3 flex justify-end">
+              <Button onClick={() => void confirmCheckIn()} disabled={loading}>
+                {loading ? 'Confirming...' : 'Confirm check-in'}
+              </Button>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
       {flow === 'success' ? (
-        <section className="border-2 border-app-success bg-green-50 p-4">
-          <h2 className="text-sm font-bold text-app-success">Check-in complete</h2>
-          <p className="mt-1 font-mono text-xs text-app-text">Stored at {resultLocation}</p>
-          {warning ? <p className="mt-1 text-xs text-app-warning">{warning}</p> : null}
-          <div className="mt-3">
+        <section className="app-frame-soft px-3 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="success">Stored</Badge>
+            <h2 className="app-section-title">Check-in complete</h2>
+          </div>
+          <div className="mt-1 text-[13px] text-app-text">Stored at {resultLocation}</div>
+          {warning ? <div className="mt-1 text-[12px] text-app-warning">{warning}</div> : null}
+          <div className="mt-3 flex justify-end">
             <Button onClick={() => window.location.reload()}>Check in another item</Button>
           </div>
         </section>

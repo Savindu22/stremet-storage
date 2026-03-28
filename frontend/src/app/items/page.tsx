@@ -54,7 +54,7 @@ export default function ItemsPage() {
 
   const columns = useMemo<TableColumn<ItemWithLocation>[]>(
     () => [
-      { key: 'item_code', header: 'Item code', sortable: true, render: (item) => <span className="font-mono font-medium">{item.item_code}</span> },
+      { key: 'item_code', header: 'Item code', sortable: true, render: (item) => <span className="font-data font-medium">{item.item_code}</span> },
       { key: 'name', header: 'Name', sortable: true, render: (item) => item.name },
       { key: 'customer', header: 'Customer', sortable: true, render: (item) => item.customer_name || '-' },
       { key: 'material', header: 'Material', render: (item) => item.material || '-' },
@@ -64,10 +64,15 @@ export default function ItemsPage() {
         key: 'checked_in_at',
         header: 'Checked in',
         sortable: true,
-        render: (item) => <span className="font-mono text-xs">{formatDateTime(item.current_location?.checked_in_at || item.created_at)}</span>,
+        render: (item) => <span className="font-data text-[11px]">{formatDateTime(item.current_location?.checked_in_at || item.created_at)}</span>,
       },
     ],
     [],
+  );
+
+  const activeFilterCount = useMemo(
+    () => [filters.search, filters.type, filters.customer_id, filters.zone_id, filters.material].filter(Boolean).length,
+    [filters.customer_id, filters.material, filters.search, filters.type, filters.zone_id],
   );
 
   function updateFilter(next: Partial<ItemFilters>) {
@@ -84,13 +89,20 @@ export default function ItemsPage() {
   }
 
   return (
-    <div className="space-y-3 py-3">
-      <div className="flex items-center justify-between border-b border-app-border bg-app-toolbar px-3 py-2">
-        <h1 className="text-sm font-semibold text-app-text">Items</h1>
-        <span className="font-mono text-xs text-app-textMuted">{total} records</span>
-      </div>
+    <div className="space-y-2.5">
+      <section className="app-frame flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="app-page-title">Items</h1>
+          <span className="text-[11px] uppercase tracking-[0.06em] text-app-textMuted">Inventory index</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] font-medium text-app-textMuted">
+          <span>{total} rows</span>
+          <span>{activeFilterCount} filters</span>
+          <span>{filters.sort_order === 'asc' ? 'oldest first' : 'newest first'}</span>
+        </div>
+      </section>
 
-      <SearchBar placeholder="Item code, name, customer, or order number" value={filters.search || ''} onChange={(search) => updateFilter({ search })} />
+      <SearchBar placeholder="Item code, item name, customer, or order number" value={filters.search || ''} onChange={(search) => updateFilter({ search })} />
 
       <FilterBar
         onClear={() =>
@@ -133,14 +145,14 @@ export default function ItemsPage() {
       </FilterBar>
 
       {loading ? (
-        <div className="flex items-center gap-2 border border-app-border bg-white p-4">
+        <div className="app-frame-soft flex items-center gap-2 px-3 py-3">
           <LoadingSpinner />
-          <span className="text-xs text-app-textMuted">Loading items...</span>
+          <span className="text-[13px] text-app-textMuted">Loading items...</span>
         </div>
       ) : error ? (
         <EmptyState title="Unable to load items" description={error} />
       ) : items.length === 0 ? (
-        <EmptyState title="No items found" description="Try adjusting your search or filters." />
+        <EmptyState title="No items matched this view" description="Try clearing the filters or shortening the search text." />
       ) : (
         <>
           <Table

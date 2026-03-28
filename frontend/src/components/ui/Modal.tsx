@@ -19,13 +19,13 @@ export function Modal({ open, title, children, confirmLabel, cancelLabel = 'Canc
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl border border-app-border bg-white shadow-panel">
-        <div className="border-b border-app-border bg-app-navBg px-5 py-3">
-          <h2 className="text-sm font-semibold text-app-navActive">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(33,41,49,0.36)] p-3">
+      <div className="w-full max-w-2xl border border-app-border bg-app-panel shadow-[0_12px_30px_rgba(31,41,51,0.16)]">
+        <div className="border-b border-app-border bg-app-toolbar px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-app-text">{title}</h2>
         </div>
-        <div className="px-5 py-4">{children}</div>
-        <div className="flex justify-end gap-3 border-t border-app-border bg-app-toolbar px-5 py-3">
+        <div className="px-4 py-3">{children}</div>
+        <div className="flex justify-end gap-2 border-t border-app-border bg-app-toolbar px-4 py-2.5">
           <Button variant="secondary" onClick={onClose}>
             {cancelLabel}
           </Button>

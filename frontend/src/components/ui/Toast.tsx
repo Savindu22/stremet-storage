@@ -39,9 +39,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={toast.id}
             className={cn(
-              'border px-4 py-3 text-sm font-medium shadow-panel',
-              toast.variant === 'success' && 'border-green-400 bg-green-50 text-app-success',
-              toast.variant === 'error' && 'border-red-400 bg-red-50 text-app-danger',
+              'border px-3 py-2 text-[13px] font-medium shadow-panel',
+              toast.variant === 'success' && 'border-[#8fb39a] bg-[#eef5ef] text-app-success',
+              toast.variant === 'error' && 'border-[#d0aaa3] bg-[#f8ece9] text-app-danger',
             )}
           >
             {toast.message}

@@ -26,10 +26,10 @@ export function SearchBar({ placeholder = 'Search', value = '', onChange }: Sear
   }, [debouncedValue, onChange, value]);
 
   return (
-    <label className="flex min-h-11 items-center gap-2 border border-app-border bg-white px-3 py-2 shadow-inset focus-within:border-app-primary">
-      <span className="text-xs font-medium uppercase tracking-wider text-app-textMuted">Search</span>
+    <label className="app-frame-soft flex min-h-9 items-center gap-2 px-3 py-1.5 focus-within:border-app-primary">
+      <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-app-textMuted">Search</span>
       <input
-        className="w-full border-0 bg-transparent text-sm text-app-text outline-none placeholder:text-gray-400"
+        className="w-full border-0 bg-transparent text-[13px] text-app-text outline-none placeholder:text-slate-400"
         placeholder={placeholder}
         value={localValue}
         onChange={(event) => setLocalValue(event.target.value)}

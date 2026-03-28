@@ -17,10 +17,10 @@ export function NavLink({ href, label }: NavLinkProps) {
     <Link
       href={href}
       className={cn(
-        'inline-flex min-h-10 items-center border-b-2 px-4 text-xs font-medium uppercase tracking-wider',
+        'inline-flex min-h-8 items-center border border-transparent px-2.5 py-1 text-[13px] font-medium',
         isActive
-          ? 'border-app-primary bg-white/5 text-app-navActive'
-          : 'border-transparent text-app-navText hover:bg-white/5 hover:text-app-navActive',
+          ? 'border-app-borderLight bg-white text-app-text'
+          : 'text-app-navText hover:bg-white/10 hover:text-app-navActive',
       )}
     >
       {label}
