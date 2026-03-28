@@ -177,7 +177,7 @@ async function seed(): Promise<void> {
     }
     console.log('  customers: 8');
 
-    // --- Items (~200) ---
+    // --- Items (~250 total with logistical types) ---
     interface ItemRecord {
       id: string;
       code: string;
@@ -188,9 +188,34 @@ async function seed(): Promise<void> {
     }
     const items: ItemRecord[] = [];
 
-    // Customer order items (~150)
+    // 1. Raw Materials (Left Side Bias)
+    for (let i = 0; i < 30; i++) {
+        const id = uuidv4();
+        const material = randomChoice(MATERIALS);
+        const itemCode = `RAW-${String(i+1).padStart(3, '0')}`;
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'raw_material', name: `${material} Sheet` });
+        await client.query(
+            `INSERT INTO items (id, item_code, name, material, weight_kg, type, quantity)
+             VALUES ($1, $2, $3, $4, $5, 'raw_material', $6)`,
+            [id, itemCode, `${material} Sheet`, material, randomInt(20, 100), randomInt(5, 20)]
+        );
+    }
+
+    // 2. Work in Progress (Left/Mid Bias)
+    for (let i = 0; i < 40; i++) {
+        const id = uuidv4();
+        const itemCode = `WIP-${String(i+1).padStart(3, '0')}`;
+        items.push({ id, code: itemCode, customerId: null, customerCode: null, type: 'work_in_progress', name: `Interim Part ${i+1}` });
+        await client.query(
+            `INSERT INTO items (id, item_code, name, type, weight_kg, quantity)
+             VALUES ($1, $2, $3, 'work_in_progress', $4, $5)`,
+            [id, itemCode, `Interim Part ${i+1}`, randomInt(5, 30), randomInt(10, 50)]
+        );
+    }
+
+    // 3. Customer order items (Finished Goods - Right Side Bias)
     for (const cust of CUSTOMERS) {
-      const numItems = randomInt(15, 22);
+      const numItems = randomInt(10, 15);
       for (let i = 0; i < numItems; i++) {
         const id = uuidv4();
         const partType = randomChoice(PART_TYPES);
@@ -205,12 +230,16 @@ async function seed(): Promise<void> {
         const dimensions = `${w}x${h}x${thickness}mm`;
         const weightKg = parseFloat(((w * h * thickness * 0.0000079).toFixed(2)));
         const orderNumber = `ORD-${cust.code}-${2026}-${String(randomInt(1, 50)).padStart(3, '0')}`;
+        
+        // Delivery date between 1 and 30 days in future
+        const deliveryDate = new Date();
+        deliveryDate.setDate(deliveryDate.getDate() + randomInt(1, 30));
 
         items.push({ id, code: itemCode, customerId: customerIds[cust.code], customerCode: cust.code, type: 'customer_order', name });
         await client.query(
-          `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [id, itemCode, customerIds[cust.code], name, `${partType} component for ${cust.name}`, material, dimensions, weightKg, 'customer_order', orderNumber, randomInt(1, 50)]
+          `INSERT INTO items (id, item_code, customer_id, name, description, material, dimensions, weight_kg, type, order_number, quantity, delivery_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [id, itemCode, customerIds[cust.code], name, `${partType} component for ${cust.name}`, material, dimensions, weightKg, 'customer_order', orderNumber, randomInt(1, 50), deliveryDate]
         );
       }
     }
