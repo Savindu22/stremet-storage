@@ -8,7 +8,13 @@ const express_1 = require("express");
 const pool_1 = __importDefault(require("../db/pool"));
 const asyncHandler_1 = require("../middleware/asyncHandler");
 exports.statsRouter = (0, express_1.Router)();
-// GET /api/stats — rack-first warehouse occupancy stats
+const weightVerificationService_1 = require("../services/weightVerificationService");
+// GET /api/stats/weight-verification — report weight sensor discrepancies
+exports.statsRouter.get('/weight-verification', (0, asyncHandler_1.asyncHandler)(async (_req, res) => {
+    const report = await weightVerificationService_1.WeightVerificationService.getDiscrepancyReport();
+    res.json({ data: report });
+}));
+// GET /api/stats — comprehensive warehouse occupancy stats
 exports.statsRouter.get('/', (0, asyncHandler_1.asyncHandler)(async (_req, res) => {
     const racksResult = await pool_1.default.query(`
     SELECT
@@ -20,27 +26,25 @@ exports.statsRouter.get('/', (0, asyncHandler_1.asyncHandler)(async (_req, res) 
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
     GROUP BY r.id
-    ORDER BY r.display_order, r.code
+    ORDER BY r.display_order ASC
   `);
-    let totalRacks = 0;
-    let totalSlots = 0;
     let totalCapacity = 0;
     let totalItemsStored = 0;
-    let totalSlotsInUse = 0;
+    let totalCells = 0;
+    let totalCellsInUse = 0;
     for (const rack of racksResult.rows) {
-        totalRacks++;
-        totalSlots += rack.cell_count;
-        totalCapacity += rack.total_capacity;
-        totalItemsStored += rack.items_stored;
-        totalSlotsInUse += rack.cells_in_use;
+        totalCapacity += Number(rack.total_capacity);
+        totalItemsStored += Number(rack.items_stored);
+        totalCells += Number(rack.cell_count);
+        totalCellsInUse += Number(rack.cells_in_use);
     }
     res.json({
         data: {
-            total_racks: totalRacks,
-            total_slots: totalSlots,
+            total_racks: racksResult.rows.length,
+            total_slots: totalCells,
             total_capacity: totalCapacity,
             items_stored: totalItemsStored,
-            slots_in_use: totalSlotsInUse,
+            slots_in_use: totalCellsInUse,
             occupancy_percent: totalCapacity > 0 ? Math.round((totalItemsStored / totalCapacity) * 100) : 0,
             racks: racksResult.rows,
         },
