@@ -46,7 +46,7 @@ activityRouter.get('/', asyncHandler(async (req, res) => {
   }
 
   if (date_to && typeof date_to === 'string') {
-    conditions.push(`al.created_at <= $${paramIdx}`);
+    conditions.push(`al.created_at < ($${paramIdx}::date + INTERVAL '1 day')`);
     params.push(date_to);
     paramIdx++;
   }

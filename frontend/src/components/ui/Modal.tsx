@@ -12,12 +12,13 @@ type ModalProps = {
   title: string;
   children: ReactNode;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
   cancelLabel?: string;
   onConfirm?: () => void;
   onClose: () => void;
 };
 
-export function Modal({ open, title, children, confirmLabel, cancelLabel = 'Cancel', onConfirm, onClose }: ModalProps) {
+export function Modal({ open, title, children, confirmLabel, confirmDisabled = false, cancelLabel = 'Cancel', onConfirm, onClose }: ModalProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{title}</DialogTitle>
@@ -25,7 +26,7 @@ export function Modal({ open, title, children, confirmLabel, cancelLabel = 'Canc
       <DialogActions>
         <MuiButton onClick={onClose}>{cancelLabel}</MuiButton>
         {onConfirm ? (
-          <MuiButton variant="contained" onClick={onConfirm}>
+          <MuiButton variant="contained" onClick={onConfirm} disabled={confirmDisabled}>
             {confirmLabel || 'Confirm'}
           </MuiButton>
         ) : null}

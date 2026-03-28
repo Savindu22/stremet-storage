@@ -8,9 +8,11 @@ import type {
   CreateItemRequest,
   Customer,
   DuplicateWarning,
+  GlobalSearchResponse,
   ItemDetail,
   ItemFilters,
   ItemWithLocation,
+  MachineDetail,
   LocationSuggestion,
   MachineWithItemCount,
   MoveRequest,
@@ -36,6 +38,7 @@ type ZoneDetail = ZoneWithStats & {
         assignment_id: string;
         item_id: string;
         item_code: string;
+        unit_code: string;
         item_name: string;
         customer_name: string | null;
         quantity: number;
@@ -46,9 +49,18 @@ type ZoneDetail = ZoneWithStats & {
   }>;
 };
 
-type CheckInResult = { assignment_id: string; location: string };
-type CheckOutResult = { assignment_id: string; location: string; item_code: string };
-type MoveResult = { assignment_id: string; from: string; to: string };
+type CheckInResult = { assignment_id: string; unit_code: string; quantity: number; location: string };
+type CheckOutResult = { assignment_id: string; location: string; item_code: string; unit_code: string };
+type MoveResult = {
+  assignment_id: string;
+  unit_code: string;
+  source_unit_code: string;
+  from: string;
+  to: string;
+  quantity_moved: number;
+  quantity_remaining: number;
+};
+type MachineStatusUpdateResult = { assignment_id: string; unit_code: string; status: string };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
 
@@ -91,6 +103,9 @@ export const api = {
 
   getDuplicateWarnings: () => request<ApiResponse<DuplicateWarning[]>>('/items/duplicates'),
 
+  getDuplicateWarningByItemCode: (itemCode: string) =>
+    request<ApiResponse<DuplicateWarning | null>>(`/items/duplicate-check?item_code=${encodeURIComponent(itemCode)}`),
+
   getSuggestedLocations: (id: string) =>
     request<ApiResponse<LocationSuggestion[]>>(`/items/${id}/suggest-location`),
 
@@ -125,12 +140,17 @@ export const api = {
 
   getMachines: () => request<ApiResponse<MachineWithItemCount[]>>('/machines'),
 
-  getMachine: (id: string) => request<ApiResponse<MachineWithItemCount & { items: Array<{ assignment_id: string; item_id: string; item_code: string; item_name: string; customer_name: string | null; quantity: number; assigned_at: string; assigned_by: string; material: string; notes: string | null }> }>>(`/machines/${id}`),
+  getMachine: (id: string) => request<ApiResponse<MachineDetail>>(`/machines/${id}`),
+
+  updateMachineAssignmentStatus: (machineId: string, assignmentId: string, body: { status: string; performed_by: string; notes?: string }) =>
+    request<ApiResponse<MachineStatusUpdateResult>>(`/machines/${machineId}/assignments/${assignmentId}/status`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   getStats: () => request<ApiResponse<WarehouseStats>>('/stats'),
 
-  globalSearch: (query: string) =>
-    request<ApiResponse<{ items: ItemWithLocation[]; customers: Customer[]; locations: Array<{ zone_id: string; zone_name: string; zone_code: string; rack_id: string; rack_code: string; items_stored: number }> }>>(`/search?q=${encodeURIComponent(query)}`),
+  globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
 };
 
 export type { ZoneDetail };

@@ -5,6 +5,8 @@ async function reset(): Promise<void> {
   try {
     await client.query(`
       DROP TABLE IF EXISTS activity_log CASCADE;
+      DROP TABLE IF EXISTS machine_assignments CASCADE;
+      DROP TABLE IF EXISTS machines CASCADE;
       DROP TABLE IF EXISTS storage_assignments CASCADE;
       DROP TABLE IF EXISTS items CASCADE;
       DROP TABLE IF EXISTS customers CASCADE;

@@ -50,7 +50,9 @@ export default function CheckInPage() {
   const [selectedShelfSlotId, setSelectedShelfSlotId] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [notes, setNotes] = useState('');
+  const [checkInQuantity, setCheckInQuantity] = useState(1);
   const [resultLocation, setResultLocation] = useState('');
+  const [resultUnitCode, setResultUnitCode] = useState('');
   const [warning, setWarning] = useState('');
   const [loading, setLoading] = useState(false);
   const [preselectedZoneId, setPreselectedZoneId] = useState('');
@@ -104,10 +106,14 @@ export default function CheckInPage() {
     setLoading(true);
     setWarning('');
     try {
-      const [itemsRes, dupRes] = await Promise.all([api.getItems({ search: lookupCode.trim(), per_page: 100, page: 1 }), api.getDuplicateWarnings()]);
+      const [itemsRes, dupRes] = await Promise.all([
+        api.getItems({ search: lookupCode.trim(), per_page: 100, page: 1 }),
+        api.getDuplicateWarningByItemCode(lookupCode.trim()),
+      ]);
       const exact = itemsRes.data.find((i) => i.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
-      const dup = dupRes.data.find((e) => e.item_code.toLowerCase() === lookupCode.trim().toLowerCase()) || null;
+      const dup = dupRes.data;
       setExistingItem(exact);
+      setCheckInQuantity(exact?.quantity || 1);
       setNewItem((c) => ({ ...c, item_code: lookupCode.trim() }));
       setDuplicate(dup);
       if (dup) { setFlow('duplicate'); return; }
@@ -129,6 +135,7 @@ export default function CheckInPage() {
       const created = await api.createItem(newItem);
       const full = await api.getItem(created.data.id);
       setExistingItem(full.data);
+      setCheckInQuantity(full.data.quantity || newItem.quantity || 1);
       const sr = await api.getSuggestedLocations(created.data.id);
       setSuggestions(sr.data);
       setFlow('location');
@@ -139,8 +146,9 @@ export default function CheckInPage() {
     if (!existingItem?.id || !selectedShelfSlotId || !workerName) { showToast('Worker name and storage location are required', 'error'); return; }
     setLoading(true);
     try {
-      const r = await api.checkInItem({ item_id: existingItem.id, shelf_slot_id: selectedShelfSlotId, quantity: existingItem.quantity, checked_in_by: workerName, notes: notes || undefined });
+      const r = await api.checkInItem({ item_id: existingItem.id, shelf_slot_id: selectedShelfSlotId, quantity: checkInQuantity, checked_in_by: workerName, notes: notes || undefined });
       setResultLocation(r.data.location);
+      setResultUnitCode(r.data.unit_code);
       setWarning(r.warning || '');
       setFlow('success');
       showToast('Item checked in successfully');
@@ -295,7 +303,8 @@ export default function CheckInPage() {
               </Grid>
             </Grid>
             <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}><Input label="Worker name" value={workerName} onChange={(e: any) => setWorkerName(e.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 4 }}><Input label="Worker name" value={workerName} onChange={(e: any) => setWorkerName(e.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 2 }}><Input label="Unit quantity" type="number" min="1" value={String(checkInQuantity)} onChange={(e: any) => setCheckInQuantity(Math.max(1, Number(e.target.value) || 1))} /></Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} fullWidth />
               </Grid>
@@ -317,6 +326,7 @@ export default function CheckInPage() {
             <Typography variant="subtitle1">Check-in complete</Typography>
           </Stack>
           <Typography variant="body2">Stored at {resultLocation}</Typography>
+          {resultUnitCode ? <Typography variant="body2" fontFamily="monospace">Tracking unit {resultUnitCode}</Typography> : null}
           {warning ? <Typography variant="caption" color="warning.main">{warning}</Typography> : null}
           <Stack direction="row" justifyContent="flex-end" mt={2}>
             <Button onClick={() => window.location.reload()}>Check in another item</Button>

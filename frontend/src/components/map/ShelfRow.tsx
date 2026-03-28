@@ -47,8 +47,9 @@ export function ShelfRow({ shelf, searchQuery = '' }: ShelfRowProps) {
                 <Link href={item.item_href} style={{ fontWeight: 500, color: '#1565C0', fontSize: 14 }}>
                   {item.item_code}
                 </Link>
-                <Typography variant="caption">{item.quantity} units</Typography>
+                <Typography variant="caption">{item.quantity} pcs</Typography>
               </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{item.unit_code}</Typography>
               <Typography variant="body2">{item.name}</Typography>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="caption" color="text.secondary">{item.customer_name ?? 'General stock'}</Typography>

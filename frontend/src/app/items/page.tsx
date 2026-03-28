@@ -29,7 +29,12 @@ export default function ItemsPage() {
   const [materials, setMaterials] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<ItemFilters>({ page: 1, per_page: PAGE_SIZE, sort_by: 'created_at', sort_order: 'desc' });
+  const [filters, setFilters] = useState<ItemFilters>({
+    page: 1,
+    per_page: PAGE_SIZE,
+    sort_by: 'created_at',
+    sort_order: 'desc',
+  });
 
   useEffect(() => {
     void Promise.all([api.getCustomers(), api.getZones(), api.getItems({ per_page: 100, page: 1 })])
@@ -39,6 +44,12 @@ export default function ItemsPage() {
         setMaterials(Array.from(new Set(itemResponse.data.map((item) => item.material).filter((m): m is string => Boolean(m)))).sort());
       })
       .catch((err: Error) => setError(err.message));
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const search = params.get('search') || undefined;
+    setFilters((current) => (current.search === search ? current : { ...current, search, page: 1 }));
   }, []);
 
   useEffect(() => {

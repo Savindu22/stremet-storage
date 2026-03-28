@@ -1,7 +1,9 @@
 export interface MapItem {
   id: string;
+  assignment_id: string;
   item_id: string;
   item_code: string;
+  unit_code: string;
   name: string;
   customer_name: string | null;
   quantity: number;

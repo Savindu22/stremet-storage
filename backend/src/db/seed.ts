@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
+import { buildTrackingUnitCode } from '../lib/trackingUnits';
+import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
 
 // --- Helpers ---
 
@@ -101,6 +103,8 @@ const WORKERS = [
   'Sari Järvinen', 'Tuomas Lehtonen', 'Ville Heikkinen',
   'Lauri Koskinen',
 ];
+
+const MACHINE_ASSIGNMENT_STATUSES: MachineAssignmentStatus[] = ['queued', 'processing', 'needs_attention', 'ready_for_storage'];
 
 async function seed(): Promise<void> {
   const client = await pool.connect();
@@ -264,6 +268,7 @@ async function seed(): Promise<void> {
     for (const s of slots) {
       slotCounts[s.id] = 0;
     }
+    const trackingUnitSequenceByItemId: Record<string, number> = {};
 
     for (const item of toAssign) {
       // Decide target zone based on item type
@@ -288,13 +293,16 @@ async function seed(): Promise<void> {
       const checkedInAt = randomDate(90);
       const worker = randomChoice(WORKERS);
       const assignmentId = uuidv4();
+      const nextUnitSequence = (trackingUnitSequenceByItemId[item.id] || 0) + 1;
+      trackingUnitSequenceByItemId[item.id] = nextUnitSequence;
+      const unitCode = buildTrackingUnitCode(item.code, nextUnitSequence);
 
       slotCounts[slot.id] += 1;
 
       await client.query(
-        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_in_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [assignmentId, item.id, slot.id, qty, checkedInAt, worker]
+        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_in_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [assignmentId, item.id, slot.id, unitCode, qty, checkedInAt, worker]
       );
 
       // Update shelf slot count
@@ -332,11 +340,14 @@ async function seed(): Promise<void> {
 
       const workerIn = randomChoice(WORKERS);
       const workerOut = randomChoice(WORKERS);
+      const nextUnitSequence = (trackingUnitSequenceByItemId[item.id] || 0) + 1;
+      trackingUnitSequenceByItemId[item.id] = nextUnitSequence;
+      const unitCode = buildTrackingUnitCode(item.code, nextUnitSequence);
 
       await client.query(
-        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_out_at, checked_in_by, checked_out_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [uuidv4(), item.id, slot.id, qty, checkedInAt, checkedOutAt, workerIn, workerOut, randomChoice([null, 'Shipped to customer', 'Moved to production', 'Quality check', 'Returned to supplier'])]
+        `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_at, checked_out_at, checked_in_by, checked_out_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [uuidv4(), item.id, slot.id, unitCode, qty, checkedInAt, checkedOutAt, workerIn, workerOut, randomChoice([null, 'Shipped to customer', 'Moved to production', 'Quality check', 'Returned to supplier'])]
       );
 
       const locationIn = formatLocation(slot.zoneCode, slot.rackNum, slot.shelfNum);
@@ -437,11 +448,15 @@ async function seed(): Promise<void> {
       const date = randomDate(14);
       const worker = randomChoice(WORKERS);
       const id = uuidv4();
+      const nextUnitSequence = (trackingUnitSequenceByItemId[item.id] || 0) + 1;
+      trackingUnitSequenceByItemId[item.id] = nextUnitSequence;
+      const unitCode = buildTrackingUnitCode(item.code, nextUnitSequence);
+      const status = randomChoice(MACHINE_ASSIGNMENT_STATUSES) || getDefaultMachineAssignmentStatus();
 
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, item.id, machineIds[machine.code], qty, date, worker, randomChoice([null, 'Processing', 'Waiting for setup', 'In queue'])]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, status, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, item.id, machineIds[machine.code], unitCode, status, qty, date, worker, randomChoice([null, 'Processing', 'Waiting for setup', 'In queue'])]
       );
 
       // Activity log entry for the machine assignment

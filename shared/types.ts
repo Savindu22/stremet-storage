@@ -11,6 +11,8 @@ export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 
 export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bending' | 'bending';
 
+export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention' | 'ready_for_storage';
+
 // --- Database Entities ---
 
 export interface Zone {
@@ -76,6 +78,8 @@ export interface StorageAssignment {
   id: string;
   item_id: string;
   shelf_slot_id: string;
+  unit_code: string;
+  parent_unit_code: string | null;
   quantity: number;
   checked_in_at: string;
   checked_out_at: string | null;
@@ -110,6 +114,9 @@ export interface MachineAssignment {
   id: string;
   item_id: string;
   machine_id: string;
+  unit_code: string;
+  parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
   quantity: number;
   assigned_at: string;
   assigned_by: string;
@@ -167,6 +174,8 @@ export interface ItemWithLocation extends Item {
   customer_name: string | null;
   customer_code: string | null;
   current_location: {
+    unit_code: string;
+    parent_unit_code: string | null;
     zone_name: string;
     zone_code: string;
     rack_code: string;
@@ -180,6 +189,9 @@ export interface ItemWithLocation extends Item {
 
 export interface MachineLocation {
   assignment_id: string;
+  unit_code: string;
+  parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
   machine_id: string;
   machine_code: string;
   machine_name: string;
@@ -189,14 +201,71 @@ export interface MachineLocation {
   assigned_by: string;
 }
 
+export interface TrackingUnit {
+  assignment_id: string;
+  source_type: 'shelf' | 'machine';
+  unit_code: string;
+  parent_unit_code: string | null;
+  status: MachineAssignmentStatus | null;
+  quantity: number;
+  assigned_at: string;
+  assigned_by: string;
+  shelf_slot_id: string | null;
+  zone_name: string | null;
+  zone_code: string | null;
+  rack_code: string | null;
+  shelf_number: number | null;
+  machine_id: string | null;
+  machine_code: string | null;
+  machine_name: string | null;
+  machine_category: MachineCategory | null;
+}
+
 export interface ItemDetail extends ItemWithLocation {
   machine_locations: MachineLocation[];
+  tracking_units: TrackingUnit[];
   activity_history: ActivityLog[];
 }
 
 export interface MachineWithItemCount extends Machine {
   active_items: number;
   total_quantity: number;
+}
+
+export interface MachineDetailItem {
+  assignment_id: string;
+  unit_code: string;
+  parent_unit_code: string | null;
+  status: MachineAssignmentStatus;
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  customer_name: string | null;
+  material: string;
+  dimensions: string;
+  weight_kg: number;
+  quantity: number;
+  assigned_at: string;
+  assigned_by: string;
+  notes: string | null;
+}
+
+export interface MachineActivity extends ActivityLog {
+  item_code: string;
+  item_name: string;
+}
+
+export interface MachineStats {
+  active_assignments: number;
+  total_pieces: number;
+  completed_assignments: number;
+  oldest_assignment: string | null;
+}
+
+export interface MachineDetail extends Machine {
+  items: MachineDetailItem[];
+  activity: MachineActivity[];
+  stats: MachineStats;
 }
 
 export interface ActivityLogWithItem extends ActivityLog {
@@ -226,6 +295,37 @@ export interface DuplicateWarning {
   }[];
 }
 
+export interface GlobalSearchLocation {
+  zone_id: string;
+  zone_name: string;
+  zone_code: string;
+  rack_id: string;
+  rack_code: string;
+  items_stored: number;
+}
+
+export interface GlobalSearchCustomer {
+  id: string;
+  name: string;
+  code: string;
+  items_in_storage: number;
+}
+
+export interface GlobalSearchMachine {
+  id: string;
+  name: string;
+  code: string;
+  category: MachineCategory | string;
+  active_items: number;
+}
+
+export interface GlobalSearchResponse {
+  items: ItemWithLocation[];
+  customers: GlobalSearchCustomer[];
+  locations: GlobalSearchLocation[];
+  machines: GlobalSearchMachine[];
+}
+
 export interface WarehouseStats {
   total_zones: number;
   total_racks: number;
@@ -249,6 +349,7 @@ export interface CheckInRequest {
 
 export interface CheckOutRequest {
   assignment_id: string;
+  source_type?: 'shelf' | 'machine';
   checked_out_by: string;
   notes?: string;
 }

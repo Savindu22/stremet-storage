@@ -1,9 +1,24 @@
 import { Router } from 'express';
+import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool';
 import { asyncHandler } from '../middleware/asyncHandler';
+import {
+  getDefaultMachineAssignmentStatus,
+} from '../lib/machineAssignmentStatus';
+import { buildTrackingUnitMoveNote, getNextTrackingUnitCode, resolveMoveQuantity } from '../lib/trackingUnits';
 
 export const itemsRouter = Router();
+
+async function getExistingTrackingUnitCodes(client: PoolClient): Promise<string[]> {
+  const result = await client.query<{ unit_code: string }>(
+    `SELECT unit_code FROM storage_assignments WHERE unit_code IS NOT NULL
+     UNION
+     SELECT unit_code FROM machine_assignments WHERE unit_code IS NOT NULL`,
+  );
+
+  return result.rows.map((row) => row.unit_code);
+}
 
 // GET /api/items — list items with search, filter, sort, pagination
 itemsRouter.get('/', asyncHandler(async (req, res) => {
@@ -31,6 +46,14 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
       OR i.name ILIKE $${paramIdx}
       OR c.name ILIKE $${paramIdx}
       OR i.order_number ILIKE $${paramIdx}
+      OR EXISTS (
+        SELECT 1 FROM storage_assignments sa_search
+        WHERE sa_search.item_id = i.id AND sa_search.checked_out_at IS NULL AND sa_search.unit_code ILIKE $${paramIdx}
+      )
+      OR EXISTS (
+        SELECT 1 FROM machine_assignments ma_search
+        WHERE ma_search.item_id = i.id AND ma_search.removed_at IS NULL AND ma_search.unit_code ILIKE $${paramIdx}
+      )
     )`);
     params.push(`%${search}%`);
     paramIdx++;
@@ -49,7 +72,15 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
   }
 
   if (zone_id && typeof zone_id === 'string') {
-    conditions.push(`z.id = $${paramIdx}`);
+    conditions.push(`EXISTS (
+      SELECT 1
+      FROM storage_assignments sa_zone
+      JOIN shelf_slots ss_zone ON sa_zone.shelf_slot_id = ss_zone.id
+      JOIN racks r_zone ON ss_zone.rack_id = r_zone.id
+      WHERE sa_zone.item_id = i.id
+        AND sa_zone.checked_out_at IS NULL
+        AND r_zone.zone_id = $${paramIdx}
+    )`);
     params.push(zone_id);
     paramIdx++;
   }
@@ -97,7 +128,7 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
     FROM items i
     LEFT JOIN customers c ON i.customer_id = c.id
     LEFT JOIN LATERAL (
-      SELECT sa.id, sa.shelf_slot_id, sa.quantity, sa.checked_in_at, sa.checked_in_by
+      SELECT sa.id, sa.shelf_slot_id, sa.unit_code, sa.parent_unit_code, sa.quantity, sa.checked_in_at, sa.checked_in_by
       FROM storage_assignments sa
       WHERE sa.item_id = i.id AND sa.checked_out_at IS NULL
       ORDER BY sa.checked_in_at DESC
@@ -121,6 +152,8 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
       c.code AS customer_code,
       CASE WHEN latest_sa.id IS NOT NULL THEN
         json_build_object(
+          'unit_code', latest_sa.unit_code,
+          'parent_unit_code', latest_sa.parent_unit_code,
           'zone_name', z.name,
           'zone_code', z.code,
           'rack_code', r.code,
@@ -174,6 +207,40 @@ itemsRouter.get('/duplicates', asyncHandler(async (_req, res) => {
   res.json({ data: result.rows });
 }));
 
+// GET /api/items/duplicate-check?item_code= — find any active storage locations for a specific item code
+itemsRouter.get('/duplicate-check', asyncHandler(async (req, res) => {
+  const { item_code } = req.query;
+
+  if (!item_code || typeof item_code !== 'string' || item_code.trim().length === 0) {
+    res.status(400).json({ error: 'item_code query parameter is required' });
+    return;
+  }
+
+  const result = await pool.query(`
+    SELECT i.item_code,
+      json_agg(
+        json_build_object(
+          'zone_name', z.name,
+          'rack_code', r.code,
+          'shelf_number', ss.shelf_number,
+          'quantity', sa.quantity,
+          'checked_in_at', sa.checked_in_at
+        )
+        ORDER BY sa.checked_in_at DESC
+      ) AS existing_locations
+    FROM storage_assignments sa
+    JOIN items i ON sa.item_id = i.id
+    JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+    JOIN racks r ON ss.rack_id = r.id
+    JOIN zones z ON r.zone_id = z.id
+    WHERE sa.checked_out_at IS NULL
+      AND LOWER(i.item_code) = LOWER($1)
+    GROUP BY i.item_code
+  `, [item_code.trim()]);
+
+  res.json({ data: result.rows[0] || null });
+}));
+
 // GET /api/items/:id/suggest-location — smart location suggestion
 itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -190,7 +257,7 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
     return;
   }
 
-  const item = itemResult.rows[0];
+    const item = itemResult.rows[0];
 
   // Determine preferred zone based on type
   let preferredZoneCode: string;
@@ -285,7 +352,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
   // Current location
   const locationResult = await pool.query(`
-    SELECT sa.id AS assignment_id, sa.checked_in_at, sa.checked_in_by, sa.quantity,
+    SELECT sa.id AS assignment_id, sa.unit_code, sa.parent_unit_code, sa.checked_in_at, sa.checked_in_by, sa.quantity,
       ss.id AS shelf_slot_id, ss.shelf_number,
       r.code AS rack_code,
       z.name AS zone_name, z.code AS zone_code
@@ -300,12 +367,66 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
 
   // Machine locations
   const machineResult = await pool.query(`
-    SELECT ma.id AS assignment_id, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
+    SELECT ma.id AS assignment_id, ma.unit_code, ma.parent_unit_code, ma.status, ma.machine_id, ma.quantity, ma.assigned_at, ma.assigned_by,
       m.code AS machine_code, m.name AS machine_name, m.category AS machine_category
     FROM machine_assignments ma
     JOIN machines m ON ma.machine_id = m.id
     WHERE ma.item_id = $1 AND ma.removed_at IS NULL
     ORDER BY ma.assigned_at DESC
+  `, [id]);
+
+  const trackingUnitsResult = await pool.query(`
+    SELECT *
+    FROM (
+      SELECT
+        sa.id AS assignment_id,
+        'shelf'::text AS source_type,
+        sa.unit_code,
+        sa.parent_unit_code,
+        sa.quantity,
+        sa.checked_in_at AS assigned_at,
+        sa.checked_in_by AS assigned_by,
+        NULL::text AS status,
+        ss.id AS shelf_slot_id,
+        z.name AS zone_name,
+        z.code AS zone_code,
+        r.code AS rack_code,
+        ss.shelf_number,
+        NULL::uuid AS machine_id,
+        NULL::text AS machine_code,
+        NULL::text AS machine_name,
+        NULL::text AS machine_category
+      FROM storage_assignments sa
+      JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+      JOIN racks r ON ss.rack_id = r.id
+      JOIN zones z ON r.zone_id = z.id
+      WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
+
+      UNION ALL
+
+      SELECT
+        ma.id AS assignment_id,
+        'machine'::text AS source_type,
+        ma.unit_code,
+        ma.parent_unit_code,
+        ma.quantity,
+        ma.assigned_at AS assigned_at,
+        ma.assigned_by AS assigned_by,
+        ma.status,
+        NULL::uuid AS shelf_slot_id,
+        NULL::text AS zone_name,
+        NULL::text AS zone_code,
+        NULL::text AS rack_code,
+        NULL::integer AS shelf_number,
+        ma.machine_id,
+        m.code AS machine_code,
+        m.name AS machine_name,
+        m.category AS machine_category
+      FROM machine_assignments ma
+      JOIN machines m ON ma.machine_id = m.id
+      WHERE ma.item_id = $1 AND ma.removed_at IS NULL
+    ) active_units
+    ORDER BY assigned_at DESC, unit_code ASC
   `, [id]);
 
   // Activity history
@@ -320,6 +441,7 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
       ...itemResult.rows[0],
       current_location: locationResult.rows[0] || null,
       machine_locations: machineResult.rows,
+      tracking_units: trackingUnitsResult.rows,
       activity_history: historyResult.rows,
     },
   });
@@ -412,6 +534,8 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
       return;
     }
 
+    const item = itemResult.rows[0];
+
     // Check for duplicates in storage
     const dupResult = await client.query(`
       SELECT sa.id, z.name AS zone_name, r.code AS rack_code, ss.shelf_number, sa.quantity, sa.checked_in_at
@@ -431,7 +555,7 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
     }
 
     // Check shelf capacity
-    const slotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1', [shelf_slot_id]);
+    const slotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1 FOR UPDATE', [shelf_slot_id]);
     if (slotResult.rows.length === 0) {
       res.status(404).json({ error: 'Shelf slot not found' });
       await client.query('ROLLBACK');
@@ -445,12 +569,14 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
       return;
     }
 
+    const unitCode = getNextTrackingUnitCode(item.item_code as string, await getExistingTrackingUnitCodes(client));
+
     // Create assignment
     const assignmentId = uuidv4();
     await client.query(
-      `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_by, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [assignmentId, item_id, shelf_slot_id, quantity || 1, checked_in_by, notes || null]
+      `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, quantity, checked_in_by, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [assignmentId, item_id, shelf_slot_id, unitCode, quantity || 1, checked_in_by, notes || null]
     );
 
     // Update shelf count
@@ -480,7 +606,7 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
     await client.query('COMMIT');
 
     res.status(201).json({
-      data: { assignment_id: assignmentId, location: locationStr },
+      data: { assignment_id: assignmentId, unit_code: unitCode, quantity: quantity || 1, location: locationStr },
       warning,
     });
   } catch (err) {
@@ -493,7 +619,7 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
 
 // POST /api/items/check-out — check out item from storage
 itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
-  const { assignment_id, checked_out_by, notes } = req.body;
+  const { assignment_id, source_type = 'shelf', checked_out_by, notes } = req.body;
 
   if (!assignment_id || !checked_out_by) {
     res.status(400).json({ error: 'assignment_id and checked_out_by are required' });
@@ -504,37 +630,65 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Get assignment with location info
-    const assignmentResult = await client.query(`
-      SELECT sa.*, ss.id AS slot_id, z.code AS zone_code, r.code AS rack_code, ss.shelf_number, i.item_code
-      FROM storage_assignments sa
-      JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
-      JOIN racks r ON ss.rack_id = r.id
-      JOIN zones z ON r.zone_id = z.id
-      JOIN items i ON sa.item_id = i.id
-      WHERE sa.id = $1 AND sa.checked_out_at IS NULL
-    `, [assignment_id]);
+    let assignment: Record<string, unknown>;
+    let locationStr: string;
 
-    if (assignmentResult.rows.length === 0) {
-      res.status(404).json({ error: 'Active storage assignment not found' });
-      await client.query('ROLLBACK');
-      return;
+    if (source_type === 'machine') {
+      const assignmentResult = await client.query(`
+        SELECT ma.*, m.code AS machine_code, i.item_code
+        FROM machine_assignments ma
+        JOIN machines m ON ma.machine_id = m.id
+        JOIN items i ON ma.item_id = i.id
+        WHERE ma.id = $1 AND ma.removed_at IS NULL
+        FOR UPDATE OF ma
+      `, [assignment_id]);
+
+      if (assignmentResult.rows.length === 0) {
+        res.status(404).json({ error: 'Active machine assignment not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      assignment = assignmentResult.rows[0];
+      locationStr = `M/${assignment.machine_code}`;
+
+      await client.query(
+        `UPDATE machine_assignments
+         SET removed_at = NOW(), removed_by = $1, notes = COALESCE($2, notes)
+         WHERE id = $3`,
+        [checked_out_by, notes || null, assignment_id],
+      );
+    } else {
+      const assignmentResult = await client.query(`
+        SELECT sa.*, ss.id AS slot_id, z.code AS zone_code, r.code AS rack_code, ss.shelf_number, i.item_code
+        FROM storage_assignments sa
+        JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
+        JOIN racks r ON ss.rack_id = r.id
+        JOIN zones z ON r.zone_id = z.id
+        JOIN items i ON sa.item_id = i.id
+        WHERE sa.id = $1 AND sa.checked_out_at IS NULL
+        FOR UPDATE OF sa, ss
+      `, [assignment_id]);
+
+      if (assignmentResult.rows.length === 0) {
+        res.status(404).json({ error: 'Active storage assignment not found' });
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      assignment = assignmentResult.rows[0];
+      locationStr = `${assignment.zone_code}/${(assignment.rack_code as string).replace(/^[A-Z]-/, '')}/S${assignment.shelf_number}`;
+
+      await client.query(
+        `UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1, notes = COALESCE($2, notes) WHERE id = $3`,
+        [checked_out_by, notes || null, assignment_id]
+      );
+
+      await client.query(
+        'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
+        [assignment.slot_id]
+      );
     }
-
-    const assignment = assignmentResult.rows[0];
-    const locationStr = `${assignment.zone_code}/${assignment.rack_code.replace(/^[A-Z]-/, '')}/S${assignment.shelf_number}`;
-
-    // Update assignment
-    await client.query(
-      `UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1, notes = COALESCE($2, notes) WHERE id = $3`,
-      [checked_out_by, notes || null, assignment_id]
-    );
-
-    // Update shelf count
-    await client.query(
-      'UPDATE shelf_slots SET current_count = GREATEST(current_count - 1, 0), updated_at = NOW() WHERE id = $1',
-      [assignment.slot_id]
-    );
 
     // Log activity
     await client.query(
@@ -546,7 +700,7 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
     await client.query('COMMIT');
 
     res.json({
-      data: { assignment_id, location: locationStr, item_code: assignment.item_code },
+      data: { assignment_id, location: locationStr, item_code: assignment.item_code, unit_code: assignment.unit_code },
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -581,10 +735,12 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     if (source_type === 'machine') {
       // Source is a machine assignment
       const maResult = await client.query(`
-        SELECT ma.*, m.code AS machine_code, m.name AS machine_name
+        SELECT ma.*, m.code AS machine_code, m.name AS machine_name, i.item_code
         FROM machine_assignments ma
         JOIN machines m ON ma.machine_id = m.id
+        JOIN items i ON ma.item_id = i.id
         WHERE ma.id = $1 AND ma.removed_at IS NULL
+        FOR UPDATE OF ma
       `, [assignment_id]);
 
       if (maResult.rows.length === 0) {
@@ -600,12 +756,14 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     } else {
       // Source is a shelf assignment
       const saResult = await client.query(`
-        SELECT sa.*, ss.id AS old_slot_id, z.code AS old_zone_code, r.code AS old_rack_code, ss.shelf_number AS old_shelf_number
+        SELECT sa.*, ss.id AS old_slot_id, z.code AS old_zone_code, r.code AS old_rack_code, ss.shelf_number AS old_shelf_number, i.item_code
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
         JOIN zones z ON r.zone_id = z.id
+        JOIN items i ON sa.item_id = i.id
         WHERE sa.id = $1 AND sa.checked_out_at IS NULL
+        FOR UPDATE OF sa, ss
       `, [assignment_id]);
 
       if (saResult.rows.length === 0) {
@@ -620,20 +778,23 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       fromStr = `${assignment.old_zone_code}/${(assignment.old_rack_code as string).replace(/^[A-Z]-/, '')}/S${assignment.old_shelf_number}`;
     }
 
-    const moveQty = quantity != null ? Number(quantity) : totalQty;
-
-    if (moveQty <= 0 || !Number.isInteger(moveQty)) {
-      res.status(400).json({ error: 'Quantity must be a positive integer' });
-      await client.query('ROLLBACK');
-      return;
-    }
-    if (moveQty > totalQty) {
-      res.status(400).json({ error: `Cannot move ${moveQty} — only ${totalQty} available` });
+    let moveQty: number;
+    let remainingQty: number;
+    let isPartial: boolean;
+    try {
+      ({ moveQuantity: moveQty, remainingQuantity: remainingQty, isPartial } = resolveMoveQuantity(totalQty, quantity != null ? Number(quantity) : undefined));
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid move quantity' });
       await client.query('ROLLBACK');
       return;
     }
 
-    const isPartial = moveQty < totalQty;
+    const sourceUnitCode = assignment.unit_code as string;
+    const sourceParentUnitCode = (assignment.parent_unit_code as string | null) || null;
+    const movedUnitCode = isPartial
+      ? getNextTrackingUnitCode(assignment.item_code as string, await getExistingTrackingUnitCodes(client))
+      : sourceUnitCode;
+    const movedParentUnitCode = isPartial ? sourceUnitCode : sourceParentUnitCode;
     let toStr: string;
     let newAssignmentId = assignment_id;
 
@@ -667,13 +828,13 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       // Create machine assignment at target
       newAssignmentId = uuidv4();
       await client.query(
-        `INSERT INTO machine_assignments (id, item_id, machine_id, quantity, assigned_at, assigned_by, notes)
-         VALUES ($1, $2, $3, $4, NOW(), $5, $6)`,
-        [newAssignmentId, itemId, to_machine_id, moveQty, performed_by, notes || null]
+        `INSERT INTO machine_assignments (id, item_id, machine_id, unit_code, parent_unit_code, status, quantity, assigned_at, assigned_by, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)`,
+        [newAssignmentId, itemId, to_machine_id, movedUnitCode, movedParentUnitCode, getDefaultMachineAssignmentStatus(), moveQty, performed_by, notes || null]
       );
     } else {
       // --- Destination is a shelf ---
-      const newSlotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1', [to_shelf_slot_id]);
+      const newSlotResult = await client.query('SELECT * FROM shelf_slots WHERE id = $1 FOR UPDATE', [to_shelf_slot_id]);
       if (newSlotResult.rows.length === 0) {
         res.status(404).json({ error: 'Target shelf slot not found' });
         await client.query('ROLLBACK');
@@ -714,9 +875,9 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       if (source_type === 'machine' || isPartial) {
         newAssignmentId = uuidv4();
         await client.query(
-          `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, quantity, checked_in_at, checked_in_by, notes)
-           VALUES ($1, $2, $3, $4, NOW(), $5, $6)`,
-          [newAssignmentId, itemId, to_shelf_slot_id, moveQty, performed_by, notes || null]
+          `INSERT INTO storage_assignments (id, item_id, shelf_slot_id, unit_code, parent_unit_code, quantity, checked_in_at, checked_in_by, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
+          [newAssignmentId, itemId, to_shelf_slot_id, movedUnitCode, movedParentUnitCode, moveQty, performed_by, notes || null]
         );
         await client.query('UPDATE shelf_slots SET current_count = current_count + 1, updated_at = NOW() WHERE id = $1', [to_shelf_slot_id]);
       } else {
@@ -726,9 +887,7 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     }
 
     // Log activity
-    const noteText = isPartial
-      ? `Moved ${moveQty} of ${totalQty}${notes ? '. ' + notes : ''}`
-      : (notes || null);
+    const noteText = buildTrackingUnitMoveNote(moveQty, totalQty, notes);
 
     await client.query(
       `INSERT INTO activity_log (id, item_id, action, from_location, to_location, performed_by, notes)
@@ -739,7 +898,15 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     await client.query('COMMIT');
 
     res.json({
-      data: { assignment_id: newAssignmentId, from: fromStr, to: toStr, quantity_moved: moveQty, quantity_remaining: totalQty - moveQty },
+      data: {
+        assignment_id: newAssignmentId,
+        unit_code: movedUnitCode,
+        source_unit_code: sourceUnitCode,
+        from: fromStr,
+        to: toStr,
+        quantity_moved: moveQty,
+        quantity_remaining: remainingQty,
+      },
     });
   } catch (err) {
     await client.query('ROLLBACK');

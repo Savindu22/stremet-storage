@@ -71,6 +71,26 @@ export function machineCategoryLabel(category: string) {
   return labels[category] || category;
 }
 
+export function machineAssignmentStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    queued: 'Queued',
+    processing: 'Processing',
+    needs_attention: 'Needs attention',
+    ready_for_storage: 'Ready for storage',
+  };
+  return labels[status] || toTitleCase(status);
+}
+
 export function toTitleCase(value: string) {
-  return value.replace(/_/g, ' ');
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function actionLabel(action: string) {
+  const labels: Record<string, string> = {
+    check_in: 'Check in',
+    check_out: 'Check out',
+    move: 'Move',
+    note_added: 'Note added',
+  };
+  return labels[action] || toTitleCase(action);
 }

@@ -24,12 +24,13 @@ racksRouter.get('/:id', asyncHandler(async (req, res) => {
     SELECT ss.*,
       COALESCE(json_agg(
         json_build_object(
-          'assignment_id', sa.id,
-          'item_id', i.id,
-          'item_code', i.item_code,
-          'item_name', i.name,
-          'customer_name', c.name,
-          'material', i.material,
+           'assignment_id', sa.id,
+           'item_id', i.id,
+           'item_code', i.item_code,
+           'unit_code', sa.unit_code,
+           'item_name', i.name,
+           'customer_name', c.name,
+           'material', i.material,
           'quantity', sa.quantity,
           'checked_in_at', sa.checked_in_at,
           'checked_in_by', sa.checked_in_by

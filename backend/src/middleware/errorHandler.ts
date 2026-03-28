@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 interface PgError extends Error {
   code?: string;
@@ -9,8 +9,9 @@ export function errorHandler(
   err: PgError,
   _req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): void {
+  void next;
   console.error(`[ERROR] ${err.message}`);
 
   // PostgreSQL invalid input syntax (e.g., malformed UUID)

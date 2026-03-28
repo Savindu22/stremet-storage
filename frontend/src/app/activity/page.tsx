@@ -14,7 +14,7 @@ import { Pagination } from '@/components/ui/Pagination';
 import { Select } from '@/components/ui/Select';
 import { Table, type TableColumn } from '@/components/ui/Table';
 import { api } from '@/lib/api';
-import { formatDateTime, toTitleCase } from '@/lib/utils';
+import { actionLabel, formatDateTime } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 
@@ -37,19 +37,19 @@ export default function ActivityPage() {
 
   const columns = useMemo<TableColumn<ActivityLogWithItem>[]>(
     () => [
-      { key: 'created_at', header: 'Timestamp', sortable: true, render: (entry) => <Typography variant="caption" fontFamily="monospace">{formatDateTime(entry.created_at)}</Typography> },
-      { key: 'action', header: 'Action', render: (entry) => toTitleCase(entry.action) },
+      { key: 'created_at', header: 'Timestamp', sortable: true, render: (entry) => <Typography variant="caption">{formatDateTime(entry.created_at)}</Typography> },
+      { key: 'action', header: 'Action', render: (entry) => actionLabel(entry.action) },
       {
         key: 'item_code',
         header: 'Item code',
         render: (entry) => (
-          <Link href={`/items/${entry.item_id}`} style={{ fontFamily: 'monospace', color: '#1565C0' }} onClick={(e) => e.stopPropagation()}>
+          <Link href={`/items/${entry.item_id}`} style={{ color: '#1565C0' }} onClick={(e) => e.stopPropagation()}>
             {entry.item_code}
           </Link>
         ),
       },
-      { key: 'from_location', header: 'From', render: (entry) => <Typography variant="caption">{entry.from_location || '-'}</Typography> },
-      { key: 'to_location', header: 'To', render: (entry) => <Typography variant="caption">{entry.to_location || '-'}</Typography> },
+      { key: 'from_location', header: 'From', render: (entry) => <Typography variant="caption" fontWeight={entry.from_location ? 700 : 400}>{entry.from_location || '-'}</Typography> },
+      { key: 'to_location', header: 'To', render: (entry) => <Typography variant="caption" fontWeight={entry.to_location ? 700 : 400}>{entry.to_location || '-'}</Typography> },
       { key: 'performed_by', header: 'Performed by', render: (entry) => entry.performed_by },
       { key: 'notes', header: 'Notes', render: (entry) => <Typography variant="caption">{entry.notes || '-'}</Typography> },
     ],

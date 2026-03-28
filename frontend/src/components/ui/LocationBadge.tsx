@@ -28,7 +28,13 @@ export function LocationBadge({ location }: LocationBadgeProps) {
       size="small"
       variant={inStorage ? 'outlined' : 'filled'}
       color={inStorage ? 'primary' : 'default'}
-      sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+      sx={{
+        alignSelf: 'flex-start',
+        width: 'fit-content',
+        maxWidth: '100%',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+      }}
     />
   );
 }
@@ -41,7 +47,13 @@ export function MachineLocationBadge({ code, name }: MachineLocationBadgeProps) 
       size="small"
       variant="outlined"
       color="warning"
-      sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+      sx={{
+        alignSelf: 'flex-start',
+        width: 'fit-content',
+        maxWidth: '100%',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+      }}
     />
   );
 }

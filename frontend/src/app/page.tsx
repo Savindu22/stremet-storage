@@ -7,16 +7,11 @@ import Typography from '@mui/material/Typography';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { getWarehouseMapData } from '../components/map/api';
-import { FloorPlan } from '../components/map/FloorPlan';
 import { GridView } from '../components/map/GridView';
-import { MapSearch } from '../components/map/MapSearch';
 import { MapStats } from '../components/map/MapStats';
-import { MapToggle } from '../components/map/MapToggle';
 import type { WarehouseMapData } from '../components/map/types';
 
 export default function HomePage() {
-  const [view, setView] = useState<'floor' | 'grid'>('floor');
-  const [searchQuery, setSearchQuery] = useState('');
   const [data, setData] = useState<WarehouseMapData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,14 +36,10 @@ export default function HomePage() {
   return (
     <Stack spacing={2}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={2}>
-        <Typography variant="h3">Warehouse map</Typography>
+        <Typography variant="h3">Storage grid</Typography>
         <MapStats stats={data.stats} />
       </Stack>
-      <Stack direction="row" alignItems="flex-end" spacing={2} flexWrap="wrap">
-        <MapSearch value={searchQuery} onChange={setSearchQuery} />
-        <MapToggle value={view} onChange={setView} />
-      </Stack>
-      {view === 'floor' ? <FloorPlan zones={data.zones} searchQuery={searchQuery} /> : <GridView zones={data.zones} searchQuery={searchQuery} />}
+      <GridView zones={data.zones} />
     </Stack>
   );
 }

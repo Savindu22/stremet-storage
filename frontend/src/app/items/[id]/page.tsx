@@ -13,7 +13,7 @@ import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import type { ItemDetail, MachineLocation, MachineWithItemCount, ZoneWithStats } from '@shared/types';
+import type { ItemDetail, MachineWithItemCount, TrackingUnit, ZoneWithStats } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -24,14 +24,23 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { api, type ZoneDetail } from '@/lib/api';
-import { formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
+import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
 
 type MoveSource = {
   type: 'shelf' | 'machine';
   assignment_id: string;
+  unit_code: string;
   quantity: number;
   label: string;
 };
+
+function trackingUnitLocationLabel(unit: TrackingUnit) {
+  if (unit.source_type === 'machine') {
+    return unit.machine_code ? `M/${unit.machine_code}` : 'Machine';
+  }
+
+  return locationLabel(unit);
+}
 
 export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
@@ -125,7 +134,9 @@ export default function ItemDetailPage() {
       setItem(refreshed.data);
       setMoveOpen(false);
       const totalQty = moveSource.quantity;
-      const label = moveQuantity < totalQty ? `${moveQuantity} of ${totalQty} moved to ${response.data.to}` : `Moved to ${response.data.to}`;
+      const label = moveQuantity < totalQty
+        ? `Created unit ${response.data.unit_code} with ${moveQuantity} of ${totalQty} at ${response.data.to}`
+        : `Moved unit ${response.data.unit_code} to ${response.data.to}`;
       showToast(label);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Move failed', 'error');
@@ -147,17 +158,14 @@ export default function ItemDetailPage() {
     return <EmptyState title="Unable to load item" description={error || 'Item not found'} />;
   }
 
-  const hasShelfLocation = Boolean(item.current_location?.assignment_id);
-  const machineLocations: MachineLocation[] = item.machine_locations || [];
-  const hasAnyLocation = hasShelfLocation || machineLocations.length > 0;
+  const trackingUnits: TrackingUnit[] = item.tracking_units || [];
+  const hasAnyLocation = trackingUnits.length > 0;
 
   const infoRows: [string, string][] = [
-    ['Material', item.material || '-'],
-    ['Dimensions', item.dimensions || '-'],
-    ['Weight', formatNumber(item.weight_kg, ' kg')],
-    ['In storage', String(item.current_location?.quantity ?? 0)],
-    ['Order number', item.order_number || '-'],
-    ['Customer', item.customer_name || '-'],
+    ['Tracked units', `${trackingUnits.length}`],
+    ['In storage', `${trackingUnits.filter((unit) => unit.source_type === 'shelf').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
+    ['At machines', `${trackingUnits.filter((unit) => unit.source_type === 'machine').reduce((sum, unit) => sum + unit.quantity, 0)} pcs`],
+    ['Order quantity', `${item.quantity} pcs`],
   ];
 
   return (
@@ -168,18 +176,36 @@ export default function ItemDetailPage() {
           <Box>
             <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap">
               <Typography variant="h3">{item.name}</Typography>
-              <Badge variant="primary">{item.type}</Badge>
+              <Badge variant="primary">{item.type === 'customer_order' ? 'Customer order' : 'General stock'}</Badge>
             </Stack>
-            <Stack direction="row" spacing={2} mt={0.5} flexWrap="wrap">
-              <Typography variant="body2" fontFamily="monospace" fontWeight={500}>{item.item_code}</Typography>
-              <Typography variant="body2" color="text.secondary">{item.customer_name || 'No customer assigned'}</Typography>
-              {item.order_number ? <Typography variant="body2" color="text.secondary">Order {item.order_number}</Typography> : null}
+            <Typography variant="body2" fontFamily="monospace" fontWeight={500} mt={0.5}>{item.item_code}</Typography>
+            <Stack direction="row" spacing={3} mt={1} flexWrap="wrap">
+              <Box>
+                <Typography variant="caption" color="text.secondary">Customer</Typography>
+                <Typography variant="body2" fontWeight={500}>{item.customer_name || 'None (general stock)'}</Typography>
+              </Box>
+              {item.order_number ? (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Order number</Typography>
+                  <Typography variant="body2" fontWeight={500}>{item.order_number}</Typography>
+                </Box>
+              ) : null}
+              <Box>
+                <Typography variant="caption" color="text.secondary">Material</Typography>
+                <Typography variant="body2" fontWeight={500}>{item.material || '-'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Dimensions</Typography>
+                <Typography variant="body2" fontWeight={500}>{item.dimensions || '-'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Weight</Typography>
+                <Typography variant="body2" fontWeight={500}>{formatNumber(item.weight_kg, ' kg')}</Typography>
+              </Box>
             </Stack>
           </Box>
-          <Stack direction="row" spacing={1}>
-            {hasShelfLocation ? (
-              <Link href={`/check-out/${item.id}`}><Button variant="danger">Check out</Button></Link>
-            ) : null}
+          <Stack direction="row" spacing={1} flexShrink={0}>
+            <Typography variant="caption" color="text.secondary">{trackingUnits.length} active unit{trackingUnits.length === 1 ? '' : 's'}</Typography>
           </Stack>
         </Stack>
       </Paper>
@@ -194,72 +220,68 @@ export default function ItemDetailPage() {
                 {currentZoneId ? <Link href={`/zones/${currentZoneId}`} style={{ fontSize: 13, color: '#1565C0' }}>Open zone</Link> : null}
               </Stack>
 
-              {/* Shelf location */}
-              <Paper variant="outlined" sx={{ mb: 2, p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Storage location</Typography>
-                    <Box mt={0.5}>
-                      {item.current_location ? (
-                        <Stack direction="row" alignItems="center" spacing={1}>
-                          <LocationBadge location={item.current_location} />
-                          <Typography variant="caption" color="text.secondary">{item.current_location.quantity} pcs</Typography>
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">Not in storage</Typography>
-                      )}
-                    </Box>
-                  </Box>
-                  {hasShelfLocation ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => openMoveDialog({
-                        type: 'shelf',
-                        assignment_id: item.current_location!.assignment_id,
-                        quantity: item.current_location!.quantity ?? 1,
-                        label: locationLabel(item.current_location),
-                      })}
-                    >
-                      Move
-                    </Button>
-                  ) : null}
+              <Paper variant="outlined" sx={{ mb: 2 }}>
+                <Stack direction="row" alignItems="center" px={2} py={1.5} borderBottom={1} borderColor="divider">
+                  <Typography variant="subtitle2">Tracked units</Typography>
                 </Stack>
-              </Paper>
-
-              {/* Machine locations */}
-              {machineLocations.length > 0 ? (
-                <Paper variant="outlined" sx={{ mb: 2, p: 2 }}>
-                  <Typography variant="caption" color="text.secondary" mb={1} display="block">At machines</Typography>
-                  <Stack spacing={1}>
-                    {machineLocations.map((ml) => (
-                      <Stack key={ml.assignment_id} direction="row" justifyContent="space-between" alignItems="center">
-                        <Stack direction="row" alignItems="center" spacing={1}>
-                          <MachineLocationBadge code={ml.machine_code} name={ml.machine_name} />
-                          <Typography variant="caption" color="text.secondary">{ml.quantity} pcs</Typography>
-                          <Typography variant="caption" color="text.secondary">({machineCategoryLabel(ml.machine_category)})</Typography>
+                {trackingUnits.length === 0 ? (
+                  <Box p={2}>
+                    <EmptyState title="No active units" description="This item is not currently stored or assigned to a machine." />
+                  </Box>
+                ) : (
+                  <Stack divider={<Divider />}>
+                    {trackingUnits.map((unit) => (
+                      <Stack key={unit.assignment_id} direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }} px={2} py={1.5}>
+                        <Stack spacing={0.5} minWidth={0} flex={1}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography variant="body2" fontFamily="monospace" fontWeight={700}>{unit.unit_code}</Typography>
+                            <Badge variant={unit.source_type === 'machine' ? 'warning' : 'default'}>{unit.source_type === 'machine' ? 'Machine' : 'Storage'}</Badge>
+                            <Typography variant="caption" color="text.secondary">{unit.quantity} pcs</Typography>
+                            {unit.parent_unit_code ? <Typography variant="caption" color="text.secondary">Split from {unit.parent_unit_code}</Typography> : null}
+                          </Stack>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            {unit.source_type === 'machine' ? (
+                              <>
+                                <MachineLocationBadge code={unit.machine_code || '-'} name={unit.machine_name || undefined} />
+                                {unit.machine_category ? <Typography variant="caption" color="text.secondary">({machineCategoryLabel(unit.machine_category)})</Typography> : null}
+                              </>
+                            ) : (
+                              <LocationBadge location={unit} />
+                            )}
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">Assigned by {unit.assigned_by} on {formatDateTime(unit.assigned_at)}</Typography>
                         </Stack>
-                        <Button
-                          variant="secondary"
-                          onClick={() => openMoveDialog({
-                            type: 'machine',
-                            assignment_id: ml.assignment_id,
-                            quantity: ml.quantity,
-                            label: `M/${ml.machine_code}`,
-                          })}
-                        >
-                          Move
-                        </Button>
+
+                        <Stack direction="row" spacing={1} flexShrink={0}>
+                          {unit.source_type === 'shelf' ? (
+                            <Link href={`/check-out/${item.id}?assignmentId=${unit.assignment_id}&unitCode=${encodeURIComponent(unit.unit_code)}`}>
+                              <Button variant="danger">Check out</Button>
+                            </Link>
+                          ) : null}
+                          <Button
+                            variant="secondary"
+                            onClick={() => openMoveDialog({
+                              type: unit.source_type,
+                              assignment_id: unit.assignment_id,
+                              unit_code: unit.unit_code,
+                              quantity: unit.quantity,
+                              label: trackingUnitLocationLabel(unit),
+                            })}
+                          >
+                            Move
+                          </Button>
+                        </Stack>
                       </Stack>
                     ))}
                   </Stack>
-                </Paper>
-              ) : null}
+                )}
+              </Paper>
 
               <Grid container spacing={2}>
                 {infoRows.map(([label, value]) => (
-                  <Grid size={{ xs: 6, md: 4 }} key={label}>
+                  <Grid size={{ xs: 4 }} key={label}>
                     <Typography variant="caption" color="text.secondary">{label}</Typography>
-                    <Typography variant="body2" mt={0.25}>{value}</Typography>
+                    <Typography variant="body2" fontWeight={600} mt={0.25}>{value}</Typography>
                   </Grid>
                 ))}
               </Grid>
@@ -283,12 +305,18 @@ export default function ItemDetailPage() {
                     {item.activity_history.map((entry) => (
                       <Box key={entry.id} py={1.5}>
                         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                          <Badge variant={entry.action === 'check_out' ? 'danger' : entry.action === 'check_in' ? 'success' : 'default'}>{entry.action}</Badge>
-                          <Typography variant="caption" fontFamily="monospace" color="text.secondary">{formatDateTime(entry.created_at)}</Typography>
+                          <Badge variant={entry.action === 'check_out' ? 'danger' : entry.action === 'check_in' ? 'success' : 'default'}>{actionLabel(entry.action)}</Badge>
+                          <Typography variant="caption" color="text.secondary">{formatDateTime(entry.created_at)}</Typography>
                         </Stack>
                         <Typography variant="body2" fontWeight={500} mt={0.5}>{entry.performed_by}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {entry.action === 'move' ? `${entry.from_location || '-'} \u2192 ${entry.to_location || '-'}` : entry.to_location || entry.from_location || '-'}
+                        <Typography variant="caption" color="text.secondary" component="div">
+                          {entry.action === 'move' ? (
+                            <>From <Typography variant="caption" component="span" fontWeight={700}>{entry.from_location || '-'}</Typography> to <Typography variant="caption" component="span" fontWeight={700}>{entry.to_location || '-'}</Typography></>
+                          ) : entry.action === 'check_in' ? (
+                            <>To <Typography variant="caption" component="span" fontWeight={700}>{entry.to_location || '-'}</Typography></>
+                          ) : entry.action === 'check_out' ? (
+                            <>From <Typography variant="caption" component="span" fontWeight={700}>{entry.from_location || '-'}</Typography></>
+                          ) : null}
                         </Typography>
                         {entry.notes ? <Typography variant="body2" mt={0.5}>{entry.notes}</Typography> : null}
                       </Box>
@@ -306,8 +334,9 @@ export default function ItemDetailPage() {
         <Stack spacing={2.5} pt={1}>
           {moveSource ? (
             <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50' }}>
-              <Typography variant="caption" color="text.secondary">Moving from</Typography>
-              <Typography variant="body2" mt={0.5} fontFamily="monospace">{moveSource.label} — {moveSource.quantity} pcs</Typography>
+              <Typography variant="caption" color="text.secondary">Tracking unit</Typography>
+              <Typography variant="body2" mt={0.5} fontFamily="monospace">{moveSource.unit_code}</Typography>
+              <Typography variant="body2" mt={0.5}>{moveSource.label} — {moveSource.quantity} pcs</Typography>
             </Paper>
           ) : null}
 
@@ -318,6 +347,9 @@ export default function ItemDetailPage() {
               value={String(moveQuantity)}
               onChange={(event: any) => setMoveQuantity(Math.max(1, Math.min(moveSource.quantity, Number(event.target.value) || 1)))}
             />
+          ) : null}
+          {moveSource && moveQuantity < moveSource.quantity ? (
+            <Typography variant="caption" color="text.secondary">A new tracking unit will be created for the moved quantity.</Typography>
           ) : null}
 
           <Box>

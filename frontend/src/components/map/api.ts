@@ -9,26 +9,30 @@ function mapShelfItems(
     if ('item_code' in item) {
       return {
         id: item.assignment_id,
+        assignment_id: item.assignment_id,
         item_id: item.item_id,
         item_code: item.item_code,
+        unit_code: item.unit_code,
         name: item.item_name,
         customer_name: item.customer_name,
         quantity: item.quantity,
         item_href: `/items/${item.item_id}`,
-        checkout_href: `/check-out/${item.item_id}`,
+        checkout_href: `/check-out/${item.item_id}?assignmentId=${encodeURIComponent(item.assignment_id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
       };
     }
 
-    return {
-      id: item.id,
-      item_id: item.item.id,
-      item_code: item.item.item_code,
-      name: item.item.name,
-      customer_name: null,
-      quantity: item.quantity,
-      item_href: `/items/${item.item.id}`,
-      checkout_href: `/check-out/${item.item.id}`,
-    };
+      return {
+        id: item.id,
+        assignment_id: item.id,
+        item_id: item.item.id,
+        item_code: item.item.item_code,
+        unit_code: item.unit_code,
+        name: item.item.name,
+        customer_name: null,
+        quantity: item.quantity,
+        item_href: `/items/${item.item.id}`,
+        checkout_href: `/check-out/${item.item.id}?assignmentId=${encodeURIComponent(item.id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
+      };
   });
 }
 

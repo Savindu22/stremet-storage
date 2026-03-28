@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { HomeGridOnly } from '@/components/ui/HomeGridOnly';
+import { GlobalSearch } from '@/components/ui/GlobalSearch';
 import { NavLink } from '@/components/ui/NavLink';
 import { ToastProvider } from '@/components/ui/Toast';
 import ThemeRegistry from '@/components/ThemeRegistry';
@@ -22,7 +22,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <ThemeRegistry>
           <ToastProvider>
-            <HomeGridOnly />
             <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
               <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
                 <div className="page-shell" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingBlock: 6 }}>
@@ -35,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                       <div style={{ fontSize: 10, opacity: 0.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Warehouse management</div>
                     </div>
                   </Link>
+                  <GlobalSearch />
                   <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
                     <NavLink href="/" label="Storage grid" />
                     <NavLink href="/items" label="Items" />

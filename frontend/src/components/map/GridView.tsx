@@ -19,14 +19,13 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { MapShelf, MapZone } from './types';
 import { OccupancyBar } from './OccupancyBar';
-import { getOccupancyPalette, shelfHasSearchMatch } from './utils';
+import { getOccupancyPalette } from './utils';
 
 interface GridViewProps {
   zones: MapZone[];
-  searchQuery?: string;
 }
 
-export function GridView({ zones, searchQuery = '' }: GridViewProps) {
+export function GridView({ zones }: GridViewProps) {
   const [expandedZoneIds, setExpandedZoneIds] = useState<string[]>(zones.map((z) => z.id));
   const [expandedShelfId, setExpandedShelfId] = useState<string | null>(null);
 
@@ -36,11 +35,10 @@ export function GridView({ zones, searchQuery = '' }: GridViewProps) {
 
   function renderShelfCell(shelf: MapShelf) {
     const palette = getOccupancyPalette(shelf.current_count, shelf.capacity);
-    const highlight = shelfHasSearchMatch(shelf, searchQuery);
     const expanded = expandedShelfId === shelf.id;
 
     return (
-      <TableCell key={shelf.id} sx={{ verticalAlign: 'top', bgcolor: highlight ? 'primary.50' : 'background.paper' }}>
+      <TableCell key={shelf.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper' }}>
         <Box
           onClick={() => setExpandedShelfId((c) => (c === shelf.id ? null : shelf.id))}
           sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
