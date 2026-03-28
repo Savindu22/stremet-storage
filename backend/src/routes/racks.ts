@@ -11,7 +11,7 @@ racksRouter.get('/', asyncHandler(async (_req, res) => {
       r.*,
       COUNT(DISTINCT ss.id)::int AS cell_count,
       COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_capacity,
-      COALESCE(SUM(ss.current_volume_m3), 0)::float AS items_stored,
+      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_stored,
       COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS cells_in_use
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
@@ -30,7 +30,9 @@ racksRouter.get('/:id', asyncHandler(async (req, res) => {
     SELECT r.*,
       COUNT(DISTINCT ss.id)::int AS total_cells,
       COUNT(DISTINCT ss.id) FILTER (WHERE ss.current_count > 0)::int AS occupied_cells,
-      COALESCE(SUM(ss.current_count), 0)::int AS total_items
+      COALESCE(SUM(ss.current_count), 0)::int AS total_items,
+      COALESCE(SUM(ss.current_volume_m3), 0)::float AS volume_used,
+      COALESCE(SUM(ss.max_volume_m3), 0)::float AS total_volume_capacity
     FROM racks r
     LEFT JOIN shelf_slots ss ON ss.rack_id = r.id
     WHERE r.id = $1

@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import type { RackType } from '@shared/types';
+import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
+import { RackType } from '@shared/types';
 
 // --- Helpers ---
 function randomInt(min: number, max: number): number { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -54,10 +55,12 @@ async function seed(): Promise<void> {
     }
 
     // 2. Create 400 Volumetric Cells (Standard 19.14 m3)
+    const slots: any[] = [];
     for (const rack of racks) {
       for (let row = 1; row <= 4; row++) {
         for (let col = 1; col <= 10; col++) {
           const id = uuidv4();
+          slots.push({ id, rackId: rack.id });
           await client.query(
             `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, width_m, depth_m, height_m, max_volume_m3, current_volume_m3, current_count, max_weight_kg)
              VALUES ($1, $2, $3, $4, $5, 2.9, 1.1, 6.0, 19.14, 0, 0, 2000)`,
@@ -76,6 +79,7 @@ async function seed(): Promise<void> {
       await client.query(`INSERT INTO customers (id, name, code, contact_email) VALUES ($1, $2, $3, $4)`, [id, c.name, c.code, c.email]);
     }
 
+    const seededItems: any[] = [];
     for (let i = 0; i < 50; i++) {
       const id = uuidv4();
       const type = randomChoice(['customer_order', 'raw_material', 'work_in_progress']);
@@ -84,10 +88,13 @@ async function seed(): Promise<void> {
       const deliveryDate = new Date();
       deliveryDate.setDate(deliveryDate.getDate() + randomInt(1, 14));
 
+      const itemCode = `ITEM-${String(i+1).padStart(3, '0')}`;
+      seededItems.push({ id, item_code: itemCode, weight_kg: weight, volume_m3: volume });
+
       await client.query(
         `INSERT INTO items (id, item_code, customer_id, name, weight_kg, volume_m3, type, quantity, delivery_date, turnover_class)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [id, `ITEM-${String(i+1).padStart(3, '0')}`, type === 'customer_order' ? customerIds['KONE'] : null, `${randomChoice(PART_TYPES)}`, weight, volume, type, randomInt(1, 10), deliveryDate, randomChoice(['A', 'B', 'C'])]
+        [id, itemCode, type === 'customer_order' ? customerIds['KONE'] : null, `${randomChoice(PART_TYPES)}`, weight, volume, type, randomInt(1, 10), deliveryDate, randomChoice(['A', 'B', 'C'])]
       );
     }
 

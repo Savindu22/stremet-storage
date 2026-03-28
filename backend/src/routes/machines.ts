@@ -11,15 +11,18 @@ machinesRouter.get('/', asyncHandler(async (_req, res) => {
   const result = await pool.query(`
     SELECT m.*,
       COALESCE(agg.active_items, 0)::int AS active_items,
-      COALESCE(agg.total_quantity, 0)::int AS total_quantity
+      COALESCE(agg.total_quantity, 0)::int AS total_quantity,
+      COALESCE(agg.active_volume, 0)::float AS active_volume
     FROM machines m
     LEFT JOIN (
-      SELECT machine_id,
+      SELECT ma.machine_id,
         COUNT(*)::int AS active_items,
-        SUM(quantity)::int AS total_quantity
-      FROM machine_assignments
-      WHERE removed_at IS NULL
-      GROUP BY machine_id
+        SUM(ma.quantity)::int AS total_quantity,
+        SUM(ma.quantity * i.volume_m3)::float AS active_volume
+      FROM machine_assignments ma
+      JOIN items i ON ma.item_id = i.id
+      WHERE ma.removed_at IS NULL
+      GROUP BY ma.machine_id
     ) agg ON agg.machine_id = m.id
     ORDER BY m.category, m.code
   `);

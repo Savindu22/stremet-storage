@@ -5,7 +5,7 @@
 
 // --- Enums ---
 
-export type ItemType = 'customer_order' | 'general_stock';
+export type ItemType = 'customer_order' | 'general_stock' | 'raw_material' | 'work_in_progress';
 
 export type ActionType = 'check_in' | 'check_out' | 'move' | 'note_added';
 
@@ -42,13 +42,16 @@ export interface ShelfSlot {
   shelf_number: number;
   row_number: number;
   column_number: number;
-  capacity: number;
   width_m: number;
   depth_m: number;
   height_m: number;
   max_volume_m3: number;
   current_volume_m3: number;
   current_count: number;
+  current_weight_kg: number;
+  max_weight_kg: number;
+  measured_weight_kg: number;
+  weight_discrepancy_threshold: number;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +77,9 @@ export interface Item {
   type: ItemType;
   order_number: string | null;
   quantity: number;
+  delivery_date: string | null;
+  production_priority: number;
+  turnover_class: 'A' | 'B' | 'C';
   created_at: string;
   updated_at: string;
 }
@@ -166,27 +172,9 @@ export interface ShelfSlotWithItems extends ShelfSlot {
 
 export interface RackWithStats extends Rack {
   cell_count: number;
-  total_capacity: number;
-  items_stored: number;
+  total_capacity: number; // Max Volume
+  items_stored: number; // Current Volume
   cells_in_use: number;
-}
-
-export interface StorageLocation {
-  unit_code: string;
-  parent_unit_code: string | null;
-  rack_id: string;
-  rack_code: string;
-  rack_label: string;
-  row_number: number;
-  column_number: number;
-  shelf_slot_id: string;
-  assignment_id: string;
-  checked_in_at: string;
-  quantity: number;
-}
-
-export interface StorageAssignmentWithItem extends StorageAssignment {
-  item: Item;
 }
 
 export interface RackCellItem {
@@ -197,7 +185,6 @@ export interface RackCellItem {
   item_name: string;
   customer_name: string | null;
   material: string;
-  volume_m3?: number;
   quantity: number;
   checked_in_at: string;
   checked_in_by: string;
@@ -206,21 +193,6 @@ export interface RackCellItem {
 export interface ItemWithLocation extends Item {
   customer_name: string | null;
   customer_code: string | null;
-  current_location: StorageLocation | null;
-}
-
-export interface MachineLocation {
-  assignment_id: string;
-  unit_code: string;
-  parent_unit_code: string | null;
-  status: MachineAssignmentStatus;
-  machine_id: string;
-  machine_code: string;
-  machine_name: string;
-  machine_category: MachineCategory;
-  quantity: number;
-  assigned_at: string;
-  assigned_by: string;
 }
 
 export interface TrackingUnit {
@@ -245,7 +217,6 @@ export interface TrackingUnit {
 }
 
 export interface ItemDetail extends ItemWithLocation {
-  machine_locations: MachineLocation[];
   tracking_units: TrackingUnit[];
   activity_history: ActivityLog[];
 }
@@ -253,42 +224,32 @@ export interface ItemDetail extends ItemWithLocation {
 export interface MachineWithItemCount extends Machine {
   active_items: number;
   total_quantity: number;
+  active_volume: number;
 }
 
 export interface MachineDetailItem {
   assignment_id: string;
-  unit_code: string;
-  parent_unit_code: string | null;
-  status: MachineAssignmentStatus;
   item_id: string;
   item_code: string;
+  unit_code: string;
+  status: MachineAssignmentStatus;
+  quantity: number;
   item_name: string;
   customer_name: string | null;
   material: string;
-  dimensions: string;
-  weight_kg: number;
-  quantity: number;
   assigned_at: string;
   assigned_by: string;
-  notes: string | null;
-}
-
-export interface MachineActivity extends ActivityLog {
-  item_code: string;
-  item_name: string;
-}
-
-export interface MachineStats {
-  active_assignments: number;
-  total_pieces: number;
-  completed_assignments: number;
-  oldest_assignment: string | null;
 }
 
 export interface MachineDetail extends Machine {
   items: MachineDetailItem[];
-  activity: MachineActivity[];
-  stats: MachineStats;
+  activity: ActivityLogWithItem[];
+  stats: {
+    active_assignments: number;
+    total_pieces: number;
+    completed_assignments: number;
+    oldest_assignment: string | null;
+  };
 }
 
 export interface ActivityLogWithItem extends ActivityLog {
@@ -306,19 +267,17 @@ export interface LocationSuggestion {
   available_capacity: number;
   reason: string;
   score: number;
+  location: string;
 }
 
-export interface DuplicateWarning {
-  item_code: string;
-  existing_locations: {
-    rack_id: string;
-    rack_code: string;
-    rack_label: string;
-    row_number: number;
-    column_number: number;
-    quantity: number;
-    checked_in_at: string;
-  }[];
+export interface WarehouseStats {
+  total_racks: number;
+  total_slots: number;
+  total_capacity: number;
+  volume_stored: number;
+  slots_in_use: number;
+  occupancy_percent: number;
+  racks: RackWithStats[];
 }
 
 export interface GlobalSearchLocation {
@@ -349,170 +308,4 @@ export interface GlobalSearchResponse {
   customers: GlobalSearchCustomer[];
   locations: GlobalSearchLocation[];
   machines: GlobalSearchMachine[];
-}
-
-export interface WarehouseStats {
-  total_racks: number;
-  total_slots: number;
-  total_capacity: number; // Volume m3
-  volume_stored: number; // Volume m3
-  slots_in_use: number;
-  occupancy_percent: number;
-  racks: RackWithStats[];
-}
-
-// --- Request Bodies ---
-
-export interface CheckInRequest {
-  item_id: string;
-  shelf_slot_id: string;
-  quantity: number;
-  checked_in_by: string;
-  notes?: string;
-}
-
-export interface CheckOutRequest {
-  assignment_id: string;
-  source_type?: 'shelf' | 'machine';
-  checked_out_by: string;
-  notes?: string;
-}
-
-export interface MoveRequest {
-  assignment_id: string;
-  source_type: 'shelf' | 'machine';
-  to_shelf_slot_id?: string;
-  to_machine_id?: string;
-  performed_by: string;
-  notes?: string;
-  quantity?: number;
-}
-
-export type ActionProposal =
-  | {
-      action: 'check_in';
-      item_id: string;
-      item_code: string;
-      shelf_slot_id: string;
-      location: string;
-      quantity: number;
-      notes?: string;
-    }
-  | {
-      action: 'check_out';
-      assignment_id: string;
-      unit_code: string;
-      source_type: 'shelf' | 'machine';
-      location: string;
-      item_code: string;
-      notes?: string;
-    }
-  | {
-      action: 'move';
-      assignment_id: string;
-      unit_code: string;
-      source_type: 'shelf' | 'machine';
-      from: string;
-      to: string;
-      to_shelf_slot_id?: string;
-      to_machine_id?: string;
-      quantity?: number;
-      notes?: string;
-    };
-
-export interface AssistantRequest {
-  message: string;
-  imageBase64?: string;
-  history: { role: 'user' | 'assistant'; content: string }[];
-  workerName?: string;
-}
-
-export interface AssistantResponse {
-  message: string;
-  sql?: string;
-  data?: Record<string, unknown>[];
-  rowCount?: number;
-  action?: ActionProposal;
-}
-
-export interface UnitLookupResult {
-  source_type: 'shelf' | 'machine';
-  assignment_id: string;
-  unit_code: string;
-  quantity: number;
-  item_id: string;
-  item_code: string;
-  item_name: string;
-  material: string;
-  weight_kg: number;
-  customer_name: string | null;
-  customer_code: string | null;
-  location: string;
-  rack_id?: string;
-  rack_code?: string;
-  shelf_slot_id?: string;
-  row_number?: number;
-  column_number?: number;
-  checked_in_at?: string;
-  checked_in_by?: string;
-  machine_id?: string;
-  machine_code?: string;
-  machine_name?: string;
-  machine_category?: MachineCategory;
-  status?: MachineAssignmentStatus;
-  assigned_at?: string;
-  assigned_by?: string;
-}
-
-export interface CreateItemRequest {
-  item_code: string;
-  customer_id?: string;
-  name: string;
-  description?: string;
-  material: string;
-  dimensions?: string;
-  weight_kg?: number;
-  type: ItemType;
-  order_number?: string;
-  quantity: number;
-}
-
-export interface UpdateItemRequest {
-  name?: string;
-  description?: string;
-  material?: string;
-  dimensions?: string;
-  weight_kg?: number;
-  type?: ItemType;
-  order_number?: string;
-  quantity?: number;
-}
-
-// --- Query Parameters ---
-
-export interface ItemFilters {
-  search?: string;
-  type?: ItemType;
-  customer_id?: string;
-  rack_id?: string;
-  rack_type?: RackType;
-  material?: string;
-  min_age_days?: number;
-  max_age_days?: number;
-  in_storage?: boolean;
-  sort_by?: 'item_code' | 'name' | 'customer' | 'checked_in_at' | 'location' | 'created_at';
-  sort_order?: 'asc' | 'desc';
-  page?: number;
-  per_page?: number;
-}
-
-export interface ActivityFilters {
-  item_id?: string;
-  action?: ActionType;
-  performed_by?: string;
-  date_from?: string;
-  date_to?: string;
-  sort_order?: 'asc' | 'desc';
-  page?: number;
-  per_page?: number;
 }

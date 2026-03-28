@@ -21,11 +21,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <ThemeRegistry>
           <WorkerSessionProvider>
-          <ToastProvider>
-            <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
+            <ToastProvider>            <div style={{ minHeight: '100vh', backgroundColor: 'var(--mui-palette-background-default)' }}>
               <header style={{ background: '#263238', color: '#fff', borderBottom: '2px solid #1565C0' }}>
                 <div className="page-shell" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingBlock: 6 }}>
                   <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}>
