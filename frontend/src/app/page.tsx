@@ -24,11 +24,11 @@ export default function HomePage() {
   }, []);
 
   if (!data) {
-    if (error) return <EmptyState title="Unable to load warehouse map" description={error} />;
+    if (error) return <EmptyState title="Unable to load storage grid" description={error} />;
     return (
       <Paper variant="outlined" sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
         <LoadingSpinner />
-        <Typography variant="body2" color="text.secondary">Loading warehouse data...</Typography>
+        <Typography variant="body2" color="text.secondary">Loading rack data...</Typography>
       </Paper>
     );
   }
@@ -39,7 +39,7 @@ export default function HomePage() {
         <Typography variant="h3">Storage grid</Typography>
         <MapStats stats={data.stats} />
       </Stack>
-      <GridView zones={data.zones} />
+      <GridView racks={data.racks} />
     </Stack>
   );
 }

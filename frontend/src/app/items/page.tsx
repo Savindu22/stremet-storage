@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
-import type { Customer, ItemFilters, ItemType, ItemWithLocation, ZoneWithStats } from '@shared/types';
+import type { Customer, ItemFilters, ItemType, ItemWithLocation, RackWithStats } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FilterBar } from '@/components/ui/FilterBar';
@@ -25,7 +25,7 @@ export default function ItemsPage() {
   const [items, setItems] = useState<ItemWithLocation[]>([]);
   const [total, setTotal] = useState(0);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [zones, setZones] = useState<ZoneWithStats[]>([]);
+  const [racks, setRacks] = useState<RackWithStats[]>([]);
   const [materials, setMaterials] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,10 +37,10 @@ export default function ItemsPage() {
   });
 
   useEffect(() => {
-    void Promise.all([api.getCustomers(), api.getZones(), api.getItems({ per_page: 100, page: 1 })])
-      .then(([customerResponse, zoneResponse, itemResponse]) => {
+    void Promise.all([api.getCustomers(), api.getRacks(), api.getItems({ per_page: 100, page: 1 })])
+      .then(([customerResponse, racksResponse, itemResponse]) => {
         setCustomers(customerResponse.data);
-        setZones(zoneResponse.data);
+        setRacks(racksResponse.data);
         setMaterials(Array.from(new Set(itemResponse.data.map((item) => item.material).filter((m): m is string => Boolean(m)))).sort());
       })
       .catch((err: Error) => setError(err.message));
@@ -100,7 +100,7 @@ export default function ItemsPage() {
       <FilterBar onClear={() => setFilters({ page: 1, per_page: PAGE_SIZE, sort_by: 'created_at', sort_order: 'desc' })}>
         <Select label="Type" value={filters.type || ''} onChange={(event: any) => updateFilter({ type: (event.target.value || undefined) as ItemType | undefined })} options={[{ label: 'All types', value: '' }, { label: 'Customer order', value: 'customer_order' }, { label: 'General stock', value: 'general_stock' }]} />
         <Select label="Customer" value={filters.customer_id || ''} onChange={(event: any) => updateFilter({ customer_id: event.target.value || undefined })} options={[{ label: 'All customers', value: '' }, ...customers.map((c) => ({ label: c.name, value: c.id }))]} />
-        <Select label="Zone" value={filters.zone_id || ''} onChange={(event: any) => updateFilter({ zone_id: event.target.value || undefined })} options={[{ label: 'All zones', value: '' }, ...zones.map((z) => ({ label: `${z.code} - ${z.name}`, value: z.id }))]} />
+        <Select label="Rack" value={filters.rack_id || ''} onChange={(event: any) => updateFilter({ rack_id: event.target.value || undefined })} options={[{ label: 'All racks', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]} />
         <Select label="Material" value={filters.material || ''} onChange={(event: any) => updateFilter({ material: event.target.value || undefined })} options={[{ label: 'All materials', value: '' }, ...materials.map((m) => ({ label: m, value: m }))]} />
       </FilterBar>
 

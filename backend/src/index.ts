@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { zonesRouter } from './routes/zones';
 import { racksRouter } from './routes/racks';
 import { itemsRouter } from './routes/items';
 import { activityRouter } from './routes/activity';
@@ -28,7 +27,6 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Routes
-app.use('/api/zones', zonesRouter);
 app.use('/api/racks', racksRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/activity', activityRouter);

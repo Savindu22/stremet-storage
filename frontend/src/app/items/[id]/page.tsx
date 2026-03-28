@@ -13,7 +13,7 @@ import Stack from '@mui/material/Stack';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import type { ItemDetail, MachineWithItemCount, TrackingUnit, ZoneWithStats } from '@shared/types';
+import type { ItemDetail, MachineWithItemCount, RackWithShelves, RackWithStats, TrackingUnit } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -23,7 +23,7 @@ import { LocationBadge, MachineLocationBadge } from '@/components/ui/LocationBad
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
-import { api, type ZoneDetail } from '@/lib/api';
+import { api } from '@/lib/api';
 import { actionLabel, formatDateTime, formatNumber, locationLabel, machineCategoryLabel } from '@/lib/utils';
 
 type MoveSource = {
@@ -46,10 +46,10 @@ export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
   const { showToast } = useToast();
   const [item, setItem] = useState<ItemDetail | null>(null);
-  const [zones, setZones] = useState<ZoneWithStats[]>([]);
+  const [racks, setRacks] = useState<RackWithStats[]>([]);
   const [machines, setMachines] = useState<MachineWithItemCount[]>([]);
-  const [zoneDetail, setZoneDetail] = useState<ZoneDetail | null>(null);
-  const [selectedZoneId, setSelectedZoneId] = useState('');
+  const [rackDetail, setRackDetail] = useState<RackWithShelves | null>(null);
+  const [selectedRackId, setSelectedRackId] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [selectedMachineId, setSelectedMachineId] = useState('');
   const [destType, setDestType] = useState<'storage' | 'machine'>('storage');
@@ -62,18 +62,15 @@ export default function ItemDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentZoneId = useMemo(() => {
-    if (!item?.current_location?.zone_code) return '';
-    return zones.find((z) => z.code === item.current_location?.zone_code)?.id || '';
-  }, [item?.current_location?.zone_code, zones]);
+  const currentRackId = item?.current_location?.rack_id || '';
 
   useEffect(() => {
     if (!params.id) return;
     setLoading(true);
-    void Promise.all([api.getItem(params.id), api.getZones(), api.getMachines()])
-      .then(([itemRes, zoneRes, machineRes]) => {
+    void Promise.all([api.getItem(params.id), api.getRacks(), api.getMachines()])
+      .then(([itemRes, racksRes, machineRes]) => {
         setItem(itemRes.data);
-        setZones(zoneRes.data);
+        setRacks(racksRes.data);
         setMachines(machineRes.data);
       })
       .catch((err: Error) => setError(err.message))
@@ -81,24 +78,26 @@ export default function ItemDetailPage() {
   }, [params.id]);
 
   useEffect(() => {
-    if (!selectedZoneId) { setZoneDetail(null); return; }
-    void api.getZone(selectedZoneId).then((r) => setZoneDetail(r.data));
-  }, [selectedZoneId]);
+    if (!selectedRackId) {
+      setRackDetail(null);
+      return;
+    }
+    void api.getRack(selectedRackId).then((r) => setRackDetail(r.data));
+  }, [selectedRackId]);
 
   const availableSlots = useMemo(
-    () => zoneDetail?.racks.flatMap((rack) =>
-      rack.shelves
-        .filter((s) => s.current_count < s.capacity)
-        .map((s) => ({ id: s.id, label: `${rack.code} > Shelf ${s.shelf_number} (${s.capacity - s.current_count} free)` })),
-    ) || [],
-    [zoneDetail],
+    () =>
+      rackDetail?.shelves
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ id: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+    [rackDetail],
   );
 
   function openMoveDialog(source: MoveSource) {
     setMoveSource(source);
     setMoveQuantity(source.quantity);
     setDestType('storage');
-    setSelectedZoneId('');
+    setSelectedRackId('');
     setSelectedSlotId('');
     setSelectedMachineId('');
     setMoveNotes('');
@@ -111,7 +110,7 @@ export default function ItemDetailPage() {
       return;
     }
     if (destType === 'storage' && !selectedSlotId) {
-      showToast('Select a destination shelf', 'error');
+      showToast('Select a destination cell', 'error');
       return;
     }
     if (destType === 'machine' && !selectedMachineId) {
@@ -217,7 +216,7 @@ export default function ItemDetailPage() {
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
                 <Typography variant="subtitle1">Current record</Typography>
-                {currentZoneId ? <Link href={`/zones/${currentZoneId}`} style={{ fontSize: 13, color: '#1565C0' }}>Open zone</Link> : null}
+                {currentRackId ? <Link href={`/racks/${currentRackId}`} style={{ fontSize: 13, color: '#1565C0' }}>Open rack</Link> : null}
               </Stack>
 
               <Paper variant="outlined" sx={{ mb: 2 }}>
@@ -369,16 +368,16 @@ export default function ItemDetailPage() {
           {destType === 'storage' ? (
             <>
               <Select
-                label="Destination zone"
-                value={selectedZoneId}
-                onChange={(event: any) => { setSelectedZoneId(event.target.value); setSelectedSlotId(''); }}
-                options={[{ label: 'Select zone', value: '' }, ...zones.map((z) => ({ label: `${z.code} - ${z.name}`, value: z.id }))]}
+                label="Destination rack"
+                value={selectedRackId}
+                onChange={(event: any) => { setSelectedRackId(event.target.value); setSelectedSlotId(''); }}
+                options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]}
               />
               <Select
-                label="Destination shelf"
+                label="Destination cell"
                 value={selectedSlotId}
                 onChange={(event: any) => setSelectedSlotId(event.target.value)}
-                options={[{ label: 'Select shelf', value: '' }, ...availableSlots.map((s) => ({ label: s.label, value: s.id }))]}
+                options={[{ label: 'Select cell', value: '' }, ...availableSlots.map((s) => ({ label: s.label, value: s.id }))]}
               />
             </>
           ) : (

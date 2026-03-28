@@ -1,5 +1,3 @@
-import type { MapRack, MapShelf, MapZone } from './types';
-
 export function getOccupancyRatio(used: number, total: number) {
   if (!total) {
     return 0;
@@ -46,35 +44,4 @@ export function getOccupancyPalette(used: number, total: number) {
     fill: '#DCFCE7',
     accent: '#166534',
   };
-}
-
-export function rackHasSearchMatch(rack: MapRack, query: string) {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return rack.shelves.some((shelf) => shelfHasSearchMatch(shelf, normalized));
-}
-
-export function shelfHasSearchMatch(shelf: MapShelf, query: string) {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return shelf.items.some(
-    (item) =>
-      item.item_code.toLowerCase().includes(normalized) ||
-      item.name.toLowerCase().includes(normalized) ||
-      (item.customer_name ?? '').toLowerCase().includes(normalized),
-  );
-}
-
-export function zoneHasSearchMatch(zone: MapZone, query: string) {
-  return zone.racks.some((rack) => rackHasSearchMatch(rack, query));
-}
-
-export function getZoneOccupancyPercent(zone: MapZone) {
-  return Math.round(getOccupancyRatio(zone.occupied_slots, zone.total_slots) * 100);
 }

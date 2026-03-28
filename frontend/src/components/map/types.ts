@@ -11,9 +11,10 @@ export interface MapItem {
   checkout_href: string;
 }
 
-export interface MapShelf {
+export interface MapCell {
   id: string;
-  shelf_number: number;
+  row_number: number;
+  column_number: number;
   capacity: number;
   current_count: number;
   items: MapItem[];
@@ -24,30 +25,13 @@ export interface MapRack {
   id: string;
   code: string;
   label: string;
-  zone_id: string;
-  zone_code: string;
-  zone_name: string;
-  total_shelves: number;
+  description: string;
+  rack_type: string;
+  row_count: number;
+  column_count: number;
   occupancy_used: number;
   occupancy_total: number;
-  shelves: MapShelf[];
-}
-
-export interface MapZone {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  color: string;
-  position_x: number;
-  position_y: number;
-  width: number;
-  height: number;
-  rack_count: number;
-  total_slots: number;
-  occupied_slots: number;
-  total_items: number;
-  racks: MapRack[];
+  cells: MapCell[];
 }
 
 export interface MapStatsData {
@@ -58,6 +42,6 @@ export interface MapStatsData {
 }
 
 export interface WarehouseMapData {
-  zones: MapZone[];
+  racks: MapRack[];
   stats: MapStatsData;
 }

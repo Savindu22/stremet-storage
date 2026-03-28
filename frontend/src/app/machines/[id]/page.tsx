@@ -19,7 +19,7 @@ import ScheduleIcon from '@mui/icons-material/ScheduleOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircleOutlined';
 import WarningIcon from '@mui/icons-material/WarningAmberOutlined';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUncheckedOutlined';
-import type { ItemDetail, ItemWithLocation, MachineDetail, MachineDetailItem, MachineWithItemCount, TrackingUnit, ZoneWithStats } from '@shared/types';
+import type { ItemDetail, ItemWithLocation, MachineDetail, MachineDetailItem, MachineWithItemCount, RackWithShelves, RackWithStats, TrackingUnit } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -30,7 +30,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { useDebouncedValue } from '@/lib/hooks';
-import { api, type ZoneDetail } from '@/lib/api';
+import { api } from '@/lib/api';
 import { formatDateTime, machineAssignmentStatusLabel, machineCategoryLabel } from '@/lib/utils';
 
 const categoryColors: Record<string, 'primary' | 'secondary' | 'warning' | 'error' | 'success'> = {
@@ -81,9 +81,9 @@ export default function MachineDetailPage() {
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveUnit, setMoveUnit] = useState<MachineDetailItem | null>(null);
   const [moveDestinationType, setMoveDestinationType] = useState<'shelf' | 'machine'>('shelf');
-  const [zones, setZones] = useState<ZoneWithStats[]>([]);
-  const [moveZoneId, setMoveZoneId] = useState('');
-  const [moveZoneDetail, setMoveZoneDetail] = useState<ZoneDetail | null>(null);
+  const [racks, setRacks] = useState<RackWithStats[]>([]);
+  const [moveRackId, setMoveRackId] = useState('');
+  const [moveRackDetail, setMoveRackDetail] = useState<RackWithShelves | null>(null);
   const [moveShelfSlotId, setMoveShelfSlotId] = useState('');
   const [machines, setMachines] = useState<MachineWithItemCount[]>([]);
   const [moveMachineId, setMoveMachineId] = useState('');
@@ -107,12 +107,10 @@ export default function MachineDetailPage() {
   const canImportUnit = Boolean(selectedImportUnit && importWorkerName.trim() && !importSubmitting);
   const availableMoveShelves = useMemo(
     () =>
-      moveZoneDetail?.racks.flatMap((rack) =>
-        rack.shelves
-          .filter((shelf) => shelf.current_count < shelf.capacity)
-          .map((shelf) => ({ value: shelf.id, label: `${rack.code} > Shelf ${shelf.shelf_number} (${shelf.capacity - shelf.current_count} free)` })),
-      ) || [],
-    [moveZoneDetail],
+      moveRackDetail?.shelves
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ value: cell.id, label: `${moveRackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+    [moveRackDetail],
   );
   const canSubmitMove = Boolean(
     moveUnit &&
@@ -137,20 +135,20 @@ export default function MachineDetailPage() {
       return;
     }
 
-    void Promise.all([api.getZones(), api.getMachines()]).then(([zonesResponse, machinesResponse]) => {
-      setZones(zonesResponse.data);
+    void Promise.all([api.getRacks(), api.getMachines()]).then(([racksResponse, machinesResponse]) => {
+      setRacks(racksResponse.data);
       setMachines(machinesResponse.data.filter((entry) => entry.id !== params.id));
     });
   }, [moveOpen, params.id]);
 
   useEffect(() => {
-    if (!moveOpen || moveDestinationType !== 'shelf' || !moveZoneId) {
-      setMoveZoneDetail(null);
+    if (!moveOpen || moveDestinationType !== 'shelf' || !moveRackId) {
+      setMoveRackDetail(null);
       return;
     }
 
-    void api.getZone(moveZoneId).then((response) => setMoveZoneDetail(response.data));
-  }, [moveDestinationType, moveOpen, moveZoneId]);
+    void api.getRack(moveRackId).then((response) => setMoveRackDetail(response.data));
+  }, [moveDestinationType, moveOpen, moveRackId]);
 
   useEffect(() => {
     if (!importOpen || !debouncedImportQuery.trim()) {
@@ -211,8 +209,8 @@ export default function MachineDetailPage() {
   function openMoveDialog(item: MachineDetailItem) {
     setMoveUnit(item);
     setMoveDestinationType('shelf');
-    setMoveZoneId('');
-    setMoveZoneDetail(null);
+    setMoveRackId('');
+    setMoveRackDetail(null);
     setMoveShelfSlotId('');
     setMoveMachineId('');
     setMoveQuantity(item.quantity);
@@ -323,7 +321,7 @@ export default function MachineDetailPage() {
     }
 
     if (moveDestinationType === 'shelf' && !moveShelfSlotId) {
-      showToast('Select a destination shelf', 'error');
+      showToast('Select a destination cell', 'error');
       return;
     }
 
@@ -611,10 +609,10 @@ export default function MachineDetailPage() {
               setMoveDestinationType(value);
               setMoveShelfSlotId('');
               setMoveMachineId('');
-              setMoveZoneId('');
+              setMoveRackId('');
             }}
             options={[
-              { value: 'shelf', label: 'Storage shelf' },
+              { value: 'shelf', label: 'Storage cell' },
               { value: 'machine', label: 'Another machine' },
             ]}
           />
@@ -623,21 +621,21 @@ export default function MachineDetailPage() {
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Select
-                  label="Destination zone"
-                  value={moveZoneId}
+                  label="Destination rack"
+                  value={moveRackId}
                   onChange={(event) => {
-                    setMoveZoneId(event.target.value);
+                    setMoveRackId(event.target.value);
                     setMoveShelfSlotId('');
                   }}
-                  options={[{ value: '', label: 'Select zone' }, ...zones.map((zone) => ({ value: zone.id, label: `${zone.code} - ${zone.name}` }))]}
+                  options={[{ value: '', label: 'Select rack' }, ...racks.map((rack) => ({ value: rack.id, label: `${rack.code} - ${rack.label}` }))]}
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Select
-                  label="Destination shelf"
+                  label="Destination cell"
                   value={moveShelfSlotId}
                   onChange={(event) => setMoveShelfSlotId(event.target.value)}
-                  options={[{ value: '', label: 'Select shelf' }, ...availableMoveShelves]}
+                  options={[{ value: '', label: 'Select cell' }, ...availableMoveShelves]}
                 />
               </Grid>
             </Grid>

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
+import { buildRackTypeFromZone } from '../lib/rackCells';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
 import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
 
@@ -135,9 +136,9 @@ async function seed(): Promise<void> {
         const label = `Rack ${r} (${z.name.split(' - ')[1] || z.name})`;
         racks.push({ id, zoneCode: z.code, rackNum: r });
         await client.query(
-          `INSERT INTO racks (id, zone_id, code, label, position_in_zone, total_shelves)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, zoneIds[z.code], code, label, r, 4]
+          `INSERT INTO racks (id, zone_id, code, label, description, rack_type, row_count, column_count, display_order, position_in_zone, total_shelves)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [id, zoneIds[z.code], code, label, z.description, buildRackTypeFromZone(z.code, z.name), 4, 1, r, r, 4]
         );
       }
     }
@@ -152,9 +153,9 @@ async function seed(): Promise<void> {
         const capacity = randomInt(6, 12);
         slots.push({ id, rackId: rack.id, zoneCode: rack.zoneCode, rackNum: rack.rackNum, shelfNum: s, capacity });
         await client.query(
-          `INSERT INTO shelf_slots (id, rack_id, shelf_number, capacity, current_count)
-           VALUES ($1, $2, $3, $4, 0)`,
-          [id, rack.id, s, capacity]
+          `INSERT INTO shelf_slots (id, rack_id, shelf_number, row_number, column_number, capacity, current_count)
+           VALUES ($1, $2, $3, $4, $5, $6, 0)`,
+          [id, rack.id, s, s, 1, capacity]
         );
       }
     }

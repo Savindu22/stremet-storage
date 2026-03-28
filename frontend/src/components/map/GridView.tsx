@@ -17,41 +17,60 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { EmptyState } from '@/components/ui/EmptyState';
-import type { MapShelf, MapZone } from './types';
+import { toTitleCase } from '@/lib/utils';
+import type { MapCell, MapRack } from './types';
 import { OccupancyBar } from './OccupancyBar';
 import { getOccupancyPalette } from './utils';
 
 interface GridViewProps {
-  zones: MapZone[];
+  racks: MapRack[];
 }
 
-export function GridView({ zones }: GridViewProps) {
-  const [expandedZoneIds, setExpandedZoneIds] = useState<string[]>(zones.map((z) => z.id));
-  const [expandedShelfId, setExpandedShelfId] = useState<string | null>(null);
+function groupCellsByRow(rack: MapRack) {
+  const rows = new Map<number, MapCell[]>();
+  for (const cell of rack.cells) {
+    const existing = rows.get(cell.row_number) || [];
+    existing.push(cell);
+    rows.set(cell.row_number, existing);
+  }
+  return Array.from(rows.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rowNumber, cells]) => {
+      const byColumn = new Map(cells.map((cell) => [cell.column_number, cell]));
+      return {
+        rowNumber,
+        cells: Array.from({ length: rack.column_count }, (_, index) => byColumn.get(index + 1)).filter((cell): cell is MapCell => Boolean(cell)),
+      };
+    });
+}
 
-  function toggleZone(zoneId: string) {
-    setExpandedZoneIds((c) => (c.includes(zoneId) ? c.filter((id) => id !== zoneId) : [...c, zoneId]));
+export function GridView({ racks }: GridViewProps) {
+  const [expandedRackIds, setExpandedRackIds] = useState<string[]>(racks.map((rack) => rack.id));
+  const [expandedCellId, setExpandedCellId] = useState<string | null>(null);
+
+  function toggleRack(rackId: string) {
+    setExpandedRackIds((current) => (current.includes(rackId) ? current.filter((id) => id !== rackId) : [...current, rackId]));
   }
 
-  function renderShelfCell(shelf: MapShelf) {
-    const palette = getOccupancyPalette(shelf.current_count, shelf.capacity);
-    const expanded = expandedShelfId === shelf.id;
+  function renderCell(cell: MapCell) {
+    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
+    const expanded = expandedCellId === cell.id;
 
     return (
-      <TableCell key={shelf.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper' }}>
+      <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper' }}>
         <Box
-          onClick={() => setExpandedShelfId((c) => (c === shelf.id ? null : shelf.id))}
+          onClick={() => setExpandedCellId((current) => (current === cell.id ? null : cell.id))}
           sx={{ cursor: 'pointer', border: 1, p: 1, borderColor: palette.border, bgcolor: palette.fill, borderRadius: 1 }}
         >
-          <Typography variant="body2" fontWeight={500}>{shelf.current_count === 0 ? 'Empty' : `${shelf.current_count} items`}</Typography>
-          <Typography variant="caption" color="text.secondary">{shelf.current_count}/{shelf.capacity}</Typography>
+          <Typography variant="body2" fontWeight={500}>{cell.current_count === 0 ? 'Empty' : `${cell.current_count} items`}</Typography>
+          <Typography variant="caption" color="text.secondary">{cell.current_count}/{cell.capacity}</Typography>
         </Box>
         <Collapse in={expanded}>
           <Stack spacing={0.5} mt={1}>
-            {shelf.items.length === 0 ? (
+            {cell.items.length === 0 ? (
               <Typography variant="caption" color="text.secondary">No active items.</Typography>
             ) : (
-              shelf.items.map((item) => (
+              cell.items.map((item) => (
                 <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
                   <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' }, borderRadius: 0.5, px: 0.5, mx: -0.5 }}>
                     <Typography variant="body2" fontWeight={500} color="primary">{item.item_code}</Typography>
@@ -67,22 +86,29 @@ export function GridView({ zones }: GridViewProps) {
     );
   }
 
-  if (zones.length === 0) return <EmptyState title="No zones available" description="Warehouse zones are not available yet." />;
+  if (racks.length === 0) {
+    return <EmptyState title="No racks available" description="Storage racks are not available yet." />;
+  }
 
   return (
     <Stack spacing={2}>
-      {zones.map((zone) => {
-        const expanded = expandedZoneIds.includes(zone.id);
+      {racks.map((rack) => {
+        const expanded = expandedRackIds.includes(rack.id);
+        const rows = groupCellsByRow(rack);
+
         return (
-          <Paper key={zone.id} variant="outlined">
-            <Box onClick={() => toggleZone(zone.id)} sx={{ p: 2, cursor: 'pointer', bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Paper key={rack.id} variant="outlined">
+            <Box onClick={() => toggleRack(rack.id)} sx={{ p: 2, cursor: 'pointer', bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 2 }}>
               <IconButton size="small">{expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}</IconButton>
               <Box flex={1}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="subtitle1">{zone.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">{zone.code}</Typography>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+                  <Box>
+                    <Typography variant="subtitle1">{rack.code}</Typography>
+                    <Typography variant="caption" color="text.secondary">{rack.label} • {toTitleCase(rack.rack_type)}</Typography>
+                  </Box>
+                  <Link href={`/racks/${rack.id}`} style={{ fontSize: 13, color: '#1565C0' }}>Open rack</Link>
                 </Stack>
-                <OccupancyBar used={zone.occupied_slots} total={zone.total_slots} compact />
+                <OccupancyBar used={rack.occupancy_used} total={rack.occupancy_total} compact />
               </Box>
             </Box>
             <Collapse in={expanded}>
@@ -90,18 +116,17 @@ export function GridView({ zones }: GridViewProps) {
                 <MuiTable size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Rack</TableCell>
-                      <TableCell>Shelf 1</TableCell>
-                      <TableCell>Shelf 2</TableCell>
-                      <TableCell>Shelf 3</TableCell>
-                      <TableCell>Shelf 4</TableCell>
+                      <TableCell>Row</TableCell>
+                      {Array.from({ length: rack.column_count }, (_, index) => (
+                        <TableCell key={index}>Column {index + 1}</TableCell>
+                      ))}
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {zone.racks.map((rack) => (
-                      <TableRow key={rack.id}>
-                        <TableCell sx={{ fontWeight: 500 }}>{rack.code}</TableCell>
-                        {rack.shelves.sort((a, b) => a.shelf_number - b.shelf_number).map(renderShelfCell)}
+                    {rows.map((row) => (
+                      <TableRow key={row.rowNumber}>
+                        <TableCell sx={{ fontWeight: 500 }}>Row {row.rowNumber}</TableCell>
+                        {row.cells.map(renderCell)}
                       </TableRow>
                     ))}
                   </TableBody>

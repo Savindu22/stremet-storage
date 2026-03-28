@@ -5,10 +5,11 @@ import { locationLabel } from '@/lib/utils';
 
 type LocationBadgeProps = {
   location?: {
-    zone_name?: string | null;
-    zone_code?: string | null;
+    rack_id?: string | null;
     rack_code?: string | null;
-    shelf_number?: number | null;
+    rack_label?: string | null;
+    row_number?: number | null;
+    column_number?: number | null;
   } | null;
 };
 

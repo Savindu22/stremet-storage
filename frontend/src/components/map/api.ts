@@ -1,131 +1,66 @@
-import type { RackWithShelves, ZoneWithStats } from '@shared/types';
-import { api, type ZoneDetail } from '@/lib/api';
-import type { MapRack, MapShelf, MapZone, WarehouseMapData } from './types';
+import type { RackWithShelves, RackWithStats } from '@shared/types';
+import { api } from '@/lib/api';
+import type { MapCell, MapRack, WarehouseMapData } from './types';
 
-function mapShelfItems(
-  items: NonNullable<ZoneDetail['racks'][number]['shelves'][number]['items']> | RackWithShelves['shelves'][number]['items'],
-) {
-  return items.map((item) => {
-    if ('item_code' in item) {
-      return {
-        id: item.assignment_id,
-        assignment_id: item.assignment_id,
-        item_id: item.item_id,
-        item_code: item.item_code,
-        unit_code: item.unit_code,
-        name: item.item_name,
-        customer_name: item.customer_name,
-        quantity: item.quantity,
-        item_href: `/items/${item.item_id}`,
-        checkout_href: `/check-out/${item.item_id}?assignmentId=${encodeURIComponent(item.assignment_id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
-      };
-    }
-
-      return {
-        id: item.id,
-        assignment_id: item.id,
-        item_id: item.item.id,
-        item_code: item.item.item_code,
-        unit_code: item.unit_code,
-        name: item.item.name,
-        customer_name: null,
-        quantity: item.quantity,
-        item_href: `/items/${item.item.id}`,
-        checkout_href: `/check-out/${item.item.id}?assignmentId=${encodeURIComponent(item.id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
-      };
-  });
+function mapCellItems(items: RackWithShelves['shelves'][number]['items']) {
+  return items.map((item) => ({
+    id: item.assignment_id,
+    assignment_id: item.assignment_id,
+    item_id: item.item_id,
+    item_code: item.item_code,
+    unit_code: item.unit_code,
+    name: item.item_name,
+    customer_name: item.customer_name,
+    quantity: item.quantity,
+    item_href: `/items/${item.item_id}`,
+    checkout_href: `/check-out/${item.item_id}?assignmentId=${encodeURIComponent(item.assignment_id)}&unitCode=${encodeURIComponent(item.unit_code)}`,
+  }));
 }
 
-function mapRackFromZoneDetail(zone: Pick<ZoneDetail, 'id' | 'code' | 'name'>, rack: ZoneDetail['racks'][number]): MapRack {
-  const shelves: MapShelf[] = rack.shelves.map((shelf) => ({
-    id: shelf.id,
-    shelf_number: shelf.shelf_number,
-    capacity: shelf.capacity,
-    current_count: shelf.current_count,
-    items: mapShelfItems(shelf.items ?? []),
-    checkin_href: `/check-in?zone=${encodeURIComponent(zone.id)}&shelf=${encodeURIComponent(shelf.id)}`,
+function mapRackFromDetail(rack: RackWithShelves): MapRack {
+  const cells: MapCell[] = rack.shelves.map((cell) => ({
+    id: cell.id,
+    row_number: cell.row_number,
+    column_number: cell.column_number,
+    capacity: cell.capacity,
+    current_count: cell.current_count,
+    items: mapCellItems(cell.items),
+    checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&cell=${encodeURIComponent(cell.id)}`,
   }));
 
   return {
     id: rack.id,
     code: rack.code,
     label: rack.label,
-    zone_id: zone.id,
-    zone_code: zone.code,
-    zone_name: zone.name,
-    total_shelves: rack.total_shelves,
-    occupancy_used: shelves.reduce((sum, shelf) => sum + shelf.current_count, 0),
-    occupancy_total: shelves.reduce((sum, shelf) => sum + shelf.capacity, 0),
-    shelves,
+    description: rack.description,
+    rack_type: rack.rack_type,
+    row_count: rack.row_count,
+    column_count: rack.column_count,
+    occupancy_used: cells.reduce((sum, cell) => sum + cell.current_count, 0),
+    occupancy_total: cells.reduce((sum, cell) => sum + cell.capacity, 0),
+    cells,
   };
 }
 
-function mapRackFromRackDetail(rack: RackWithShelves): MapRack {
-  const shelves: MapShelf[] = rack.shelves.map((shelf) => ({
-    id: shelf.id,
-    shelf_number: shelf.shelf_number,
-    capacity: shelf.capacity,
-    current_count: shelf.current_count,
-    items: mapShelfItems(shelf.items),
-    checkin_href: `/check-in?rack=${encodeURIComponent(rack.id)}&shelf=${encodeURIComponent(shelf.id)}`,
-  }));
-
+function mapRackSummary(rack: RackWithStats): MapRack {
   return {
     id: rack.id,
     code: rack.code,
     label: rack.label,
-    zone_id: rack.zone_id,
-    zone_code: rack.zone_code,
-    zone_name: rack.zone_name,
-    total_shelves: rack.total_shelves,
-    occupancy_used: shelves.reduce((sum, shelf) => sum + shelf.current_count, 0),
-    occupancy_total: shelves.reduce((sum, shelf) => sum + shelf.capacity, 0),
-    shelves,
+    description: rack.description,
+    rack_type: rack.rack_type,
+    row_count: rack.row_count,
+    column_count: rack.column_count,
+    occupancy_used: rack.items_stored,
+    occupancy_total: rack.total_capacity,
+    cells: [],
   };
 }
 
-function mapZoneSummary(zone: ZoneWithStats): MapZone {
-  return {
-    id: zone.id,
-    code: zone.code,
-    name: zone.name,
-    description: zone.description,
-    color: zone.color,
-    position_x: zone.position_x,
-    position_y: zone.position_y,
-    width: zone.width,
-    height: zone.height,
-    rack_count: zone.rack_count,
-    total_slots: zone.slot_count,
-    occupied_slots: zone.slots_in_use,
-    total_items: zone.items_stored,
-    racks: [],
-  };
-}
-
-function mapZoneDetail(zone: ZoneDetail): MapZone {
-  return {
-    id: zone.id,
-    code: zone.code,
-    name: zone.name,
-    description: zone.description,
-    color: zone.color,
-    position_x: zone.position_x,
-    position_y: zone.position_y,
-    width: zone.width,
-    height: zone.height,
-    rack_count: zone.rack_count,
-    total_slots: zone.slot_count,
-    occupied_slots: zone.slots_in_use,
-    total_items: zone.items_stored,
-    racks: zone.racks.map((rack) => mapRackFromZoneDetail(zone, rack)),
-  };
-}
-
-function buildStats(zones: MapZone[]): WarehouseMapData['stats'] {
-  const totalSlots = zones.reduce((sum, zone) => sum + zone.total_slots, 0);
-  const occupiedSlots = zones.reduce((sum, zone) => sum + zone.occupied_slots, 0);
-  const totalItemsStored = zones.reduce((sum, zone) => sum + zone.total_items, 0);
+function buildStats(racks: MapRack[]): WarehouseMapData['stats'] {
+  const totalSlots = racks.reduce((sum, rack) => sum + (rack.cells.length || rack.row_count * rack.column_count), 0);
+  const occupiedSlots = racks.reduce((sum, rack) => sum + rack.cells.filter((cell) => cell.current_count > 0).length, 0);
+  const totalItemsStored = racks.reduce((sum, rack) => sum + rack.occupancy_used, 0);
 
   return {
     total_items_stored: totalItemsStored,
@@ -136,30 +71,25 @@ function buildStats(zones: MapZone[]): WarehouseMapData['stats'] {
 }
 
 export async function getWarehouseMapData(): Promise<WarehouseMapData> {
-  const zonesResponse = await api.getZones();
-  const zoneDetails = await Promise.all(
-    zonesResponse.data.map(async (zone) => {
+  const racksResponse = await api.getRacks();
+  const rackDetails = await Promise.all(
+    racksResponse.data.map(async (rack) => {
       try {
-        const detailResponse = await api.getZone(zone.id);
-        return mapZoneDetail(detailResponse.data);
+        const detailResponse = await api.getRack(rack.id);
+        return mapRackFromDetail(detailResponse.data);
       } catch {
-        return mapZoneSummary(zone);
+        return mapRackSummary(rack);
       }
     }),
   );
 
   return {
-    zones: zoneDetails,
-    stats: buildStats(zoneDetails),
+    racks: rackDetails,
+    stats: buildStats(rackDetails),
   };
-}
-
-export async function getZoneMapData(zoneId: string): Promise<MapZone> {
-  const response = await api.getZone(zoneId);
-  return mapZoneDetail(response.data);
 }
 
 export async function getRackMapData(rackId: string): Promise<MapRack> {
   const response = await api.getRack(rackId);
-  return mapRackFromRackDetail(response.data);
+  return mapRackFromDetail(response.data);
 }

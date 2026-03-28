@@ -13,6 +13,8 @@ export type MachineCategory = 'sheet_metal' | 'cutting' | 'laser' | 'robot_bendi
 
 export type MachineAssignmentStatus = 'queued' | 'processing' | 'needs_attention' | 'ready_for_storage';
 
+export type RackType = 'raw_materials' | 'work_in_progress' | 'finished_goods' | 'customer_orders' | 'general_stock';
+
 // --- Database Entities ---
 
 export interface Zone {
@@ -31,9 +33,14 @@ export interface Zone {
 
 export interface Rack {
   id: string;
-  zone_id: string;
+  zone_id: string | null;
   code: string;
   label: string;
+  description: string;
+  rack_type: RackType;
+  row_count: number;
+  column_count: number;
+  display_order: number;
   position_in_zone: number;
   total_shelves: number;
   created_at: string;
@@ -44,6 +51,8 @@ export interface ShelfSlot {
   id: string;
   rack_id: string;
   shelf_number: number;
+  row_number: number;
+  column_number: number;
   capacity: number;
   current_count: number;
   created_at: string;
@@ -156,35 +165,60 @@ export interface ZoneWithStats extends Zone {
 }
 
 export interface RackWithShelves extends Rack {
-  zone_code: string;
-  zone_name: string;
+  total_cells: number;
+  occupied_cells: number;
+  total_items: number;
   shelves: ShelfSlotWithItems[];
 }
 
 export interface ShelfSlotWithItems extends ShelfSlot {
   rack_code: string;
-  items: StorageAssignmentWithItem[];
+  rack_label: string;
+  items: RackCellItem[];
+}
+
+export interface RackWithStats extends Rack {
+  cell_count: number;
+  total_capacity: number;
+  items_stored: number;
+  cells_in_use: number;
+}
+
+export interface StorageLocation {
+  unit_code: string;
+  parent_unit_code: string | null;
+  rack_id: string;
+  rack_code: string;
+  rack_label: string;
+  row_number: number;
+  column_number: number;
+  shelf_slot_id: string;
+  assignment_id: string;
+  checked_in_at: string;
+  quantity: number;
 }
 
 export interface StorageAssignmentWithItem extends StorageAssignment {
   item: Item;
 }
 
+export interface RackCellItem {
+  assignment_id: string;
+  item_id: string;
+  item_code: string;
+  unit_code: string;
+  item_name: string;
+  customer_name: string | null;
+  material: string;
+  quantity: number;
+  checked_in_at: string;
+  checked_in_by: string;
+}
+
 export interface ItemWithLocation extends Item {
   customer_name: string | null;
   customer_code: string | null;
-  current_location: {
-    unit_code: string;
-    parent_unit_code: string | null;
-    zone_name: string;
-    zone_code: string;
-    rack_code: string;
-    shelf_number: number;
-    shelf_slot_id: string;
-    assignment_id: string;
-    checked_in_at: string;
-    quantity: number;
-  } | null;
+  current_location: StorageLocation | null;
 }
 
 export interface MachineLocation {
@@ -211,10 +245,11 @@ export interface TrackingUnit {
   assigned_at: string;
   assigned_by: string;
   shelf_slot_id: string | null;
-  zone_name: string | null;
-  zone_code: string | null;
+  rack_id: string | null;
   rack_code: string | null;
-  shelf_number: number | null;
+  rack_label: string | null;
+  row_number: number | null;
+  column_number: number | null;
   machine_id: string | null;
   machine_code: string | null;
   machine_name: string | null;
@@ -275,10 +310,11 @@ export interface ActivityLogWithItem extends ActivityLog {
 
 export interface LocationSuggestion {
   shelf_slot_id: string;
-  zone_code: string;
-  zone_name: string;
+  rack_id: string;
   rack_code: string;
-  shelf_number: number;
+  rack_label: string;
+  row_number: number;
+  column_number: number;
   available_capacity: number;
   reason: string;
   score: number;
@@ -287,20 +323,21 @@ export interface LocationSuggestion {
 export interface DuplicateWarning {
   item_code: string;
   existing_locations: {
-    zone_name: string;
+    rack_id: string;
     rack_code: string;
-    shelf_number: number;
+    rack_label: string;
+    row_number: number;
+    column_number: number;
     quantity: number;
     checked_in_at: string;
   }[];
 }
 
 export interface GlobalSearchLocation {
-  zone_id: string;
-  zone_name: string;
-  zone_code: string;
   rack_id: string;
   rack_code: string;
+  rack_label: string;
+  rack_type: RackType;
   items_stored: number;
 }
 
@@ -327,14 +364,13 @@ export interface GlobalSearchResponse {
 }
 
 export interface WarehouseStats {
-  total_zones: number;
   total_racks: number;
   total_slots: number;
   total_capacity: number;
   items_stored: number;
   slots_in_use: number;
   occupancy_percent: number;
-  zones: ZoneWithStats[];
+  racks: RackWithStats[];
 }
 
 // --- Request Bodies ---
@@ -394,7 +430,8 @@ export interface ItemFilters {
   search?: string;
   type?: ItemType;
   customer_id?: string;
-  zone_id?: string;
+  rack_id?: string;
+  rack_type?: RackType;
   material?: string;
   min_age_days?: number;
   max_age_days?: number;

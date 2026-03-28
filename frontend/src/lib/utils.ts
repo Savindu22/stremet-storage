@@ -1,10 +1,11 @@
 import { clsx, type ClassValue } from 'clsx';
 
 type LocationInput = {
-  zone_name?: string | null;
-  zone_code?: string | null;
+  rack_id?: string | null;
   rack_code?: string | null;
-  shelf_number?: number | null;
+  rack_label?: string | null;
+  row_number?: number | null;
+  column_number?: number | null;
 };
 
 export function cn(...inputs: ClassValue[]) {
@@ -34,13 +35,11 @@ export function formatNumber(value?: number | null, suffix = '') {
 }
 
 export function locationLabel(location?: LocationInput | null) {
-  if (!location?.rack_code || !location?.shelf_number) {
+  if (!location?.rack_code || !location?.row_number || !location?.column_number) {
     return 'Not in storage';
   }
 
-  const zone = location.zone_code || '?';
-  const rack = location.rack_code?.replace(/^[A-Z]-/, '') || '?';
-  return `${zone}/${rack}/S${location.shelf_number}`;
+  return `${location.rack_code}/R${location.row_number}C${location.column_number}`;
 }
 
 export function buildQueryString(params: object) {

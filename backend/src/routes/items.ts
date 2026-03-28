@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import {
   getDefaultMachineAssignmentStatus,
 } from '../lib/machineAssignmentStatus';
+import { buildRackCellLabel, buildRackLocationCode } from '../lib/rackCells';
 import { buildTrackingUnitMoveNote, getNextTrackingUnitCode, resolveMoveQuantity } from '../lib/trackingUnits';
 
 export const itemsRouter = Router();
@@ -26,7 +27,8 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
     search,
     type,
     customer_id,
-    zone_id,
+    rack_id,
+    rack_type,
     material,
     min_age_days,
     in_storage,
@@ -71,17 +73,30 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
     paramIdx++;
   }
 
-  if (zone_id && typeof zone_id === 'string') {
+  if (rack_id && typeof rack_id === 'string') {
     conditions.push(`EXISTS (
       SELECT 1
-      FROM storage_assignments sa_zone
-      JOIN shelf_slots ss_zone ON sa_zone.shelf_slot_id = ss_zone.id
-      JOIN racks r_zone ON ss_zone.rack_id = r_zone.id
-      WHERE sa_zone.item_id = i.id
-        AND sa_zone.checked_out_at IS NULL
-        AND r_zone.zone_id = $${paramIdx}
+      FROM storage_assignments sa_rack
+      JOIN shelf_slots ss_rack ON sa_rack.shelf_slot_id = ss_rack.id
+      WHERE sa_rack.item_id = i.id
+        AND sa_rack.checked_out_at IS NULL
+        AND ss_rack.rack_id = $${paramIdx}
     )`);
-    params.push(zone_id);
+    params.push(rack_id);
+    paramIdx++;
+  }
+
+  if (rack_type && typeof rack_type === 'string') {
+    conditions.push(`EXISTS (
+      SELECT 1
+      FROM storage_assignments sa_type
+      JOIN shelf_slots ss_type ON sa_type.shelf_slot_id = ss_type.id
+      JOIN racks r_type ON ss_type.rack_id = r_type.id
+      WHERE sa_type.item_id = i.id
+        AND sa_type.checked_out_at IS NULL
+        AND r_type.rack_type = $${paramIdx}
+    )`);
+    params.push(rack_type);
     paramIdx++;
   }
 
@@ -111,7 +126,7 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
     name: 'i.name',
     customer: 'c.name',
     checked_in_at: 'latest_sa.checked_in_at',
-    location: 'z.code',
+    location: 'r.code',
     created_at: 'i.created_at',
   };
   const sortCol = sortColumns[sort_by as string] || 'i.created_at';
@@ -136,7 +151,6 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
     ) latest_sa ON true
     LEFT JOIN shelf_slots ss ON latest_sa.shelf_slot_id = ss.id
     LEFT JOIN racks r ON ss.rack_id = r.id
-    LEFT JOIN zones z ON r.zone_id = z.id
   `;
 
   // Count total
@@ -154,10 +168,11 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
         json_build_object(
           'unit_code', latest_sa.unit_code,
           'parent_unit_code', latest_sa.parent_unit_code,
-          'zone_name', z.name,
-          'zone_code', z.code,
+          'rack_id', r.id,
           'rack_code', r.code,
-          'shelf_number', ss.shelf_number,
+          'rack_label', r.label,
+          'row_number', ss.row_number,
+          'column_number', ss.column_number,
           'shelf_slot_id', ss.id,
           'assignment_id', latest_sa.id,
           'checked_in_at', latest_sa.checked_in_at,
@@ -187,9 +202,11 @@ itemsRouter.get('/duplicates', asyncHandler(async (_req, res) => {
     SELECT i.item_code,
       json_agg(
         json_build_object(
-          'zone_name', z.name,
+          'rack_id', r.id,
           'rack_code', r.code,
-          'shelf_number', ss.shelf_number,
+          'rack_label', r.label,
+          'row_number', ss.row_number,
+          'column_number', ss.column_number,
           'quantity', sa.quantity,
           'checked_in_at', sa.checked_in_at
         )
@@ -198,7 +215,6 @@ itemsRouter.get('/duplicates', asyncHandler(async (_req, res) => {
     JOIN items i ON sa.item_id = i.id
     JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
     JOIN racks r ON ss.rack_id = r.id
-    JOIN zones z ON r.zone_id = z.id
     WHERE sa.checked_out_at IS NULL
     GROUP BY i.item_code
     HAVING COUNT(*) > 1
@@ -220,9 +236,11 @@ itemsRouter.get('/duplicate-check', asyncHandler(async (req, res) => {
     SELECT i.item_code,
       json_agg(
         json_build_object(
-          'zone_name', z.name,
+          'rack_id', r.id,
           'rack_code', r.code,
-          'shelf_number', ss.shelf_number,
+          'rack_label', r.label,
+          'row_number', ss.row_number,
+          'column_number', ss.column_number,
           'quantity', sa.quantity,
           'checked_in_at', sa.checked_in_at
         )
@@ -232,7 +250,6 @@ itemsRouter.get('/duplicate-check', asyncHandler(async (req, res) => {
     JOIN items i ON sa.item_id = i.id
     JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
     JOIN racks r ON ss.rack_id = r.id
-    JOIN zones z ON r.zone_id = z.id
     WHERE sa.checked_out_at IS NULL
       AND LOWER(i.item_code) = LOWER($1)
     GROUP BY i.item_code
@@ -259,24 +276,19 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
 
     const item = itemResult.rows[0];
 
-  // Determine preferred zone based on type
-  let preferredZoneCode: string;
-  if (item.type === 'general_stock') {
-    preferredZoneCode = 'E';
-  } else {
-    preferredZoneCode = 'D'; // customer orders default to D
-  }
+  const preferredRackType = item.type === 'general_stock' ? 'general_stock' : 'customer_orders';
 
-  // Find all available shelf slots with their zone info and customer proximity score
+  // Find all available rack cells with rack routing and customer proximity score
   const slotsResult = await pool.query(`
     SELECT
       ss.id AS shelf_slot_id,
-      z.code AS zone_code,
-      z.name AS zone_name,
+      r.id AS rack_id,
       r.code AS rack_code,
-      ss.shelf_number,
+      r.label AS rack_label,
+      ss.row_number,
+      ss.column_number,
       ss.capacity - ss.current_count AS available_capacity,
-      z.code = $1 AS is_preferred_zone,
+      r.rack_type = $1 AS is_preferred_rack_type,
       (
         SELECT COUNT(*)::int
         FROM storage_assignments sa2
@@ -289,10 +301,9 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
       ) AS same_customer_count
     FROM shelf_slots ss
     JOIN racks r ON ss.rack_id = r.id
-    JOIN zones z ON r.zone_id = z.id
     WHERE ss.current_count < ss.capacity
     ORDER BY
-      (z.code = $1) DESC,
+      (r.rack_type = $1) DESC,
       (
         SELECT COUNT(*)
         FROM storage_assignments sa2
@@ -305,12 +316,12 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
       ) DESC,
       (ss.capacity - ss.current_count) DESC
     LIMIT 3
-  `, [preferredZoneCode, item.customer_id]);
+  `, [preferredRackType, item.customer_id]);
 
   const suggestions = slotsResult.rows.map((row: Record<string, unknown>, idx: number) => {
     const reasons: string[] = [];
-    if (row.is_preferred_zone) {
-      reasons.push(`Preferred zone for ${item.type === 'general_stock' ? 'general stock' : 'customer orders'}`);
+    if (row.is_preferred_rack_type) {
+      reasons.push(`Preferred rack type for ${item.type === 'general_stock' ? 'general stock' : 'customer orders'}`);
     }
     if ((row.same_customer_count as number) > 0) {
       reasons.push(`${row.same_customer_count} other ${item.customer_code || 'customer'} items on this rack`);
@@ -319,10 +330,11 @@ itemsRouter.get('/:id/suggest-location', asyncHandler(async (req, res) => {
 
     return {
       shelf_slot_id: row.shelf_slot_id,
-      zone_code: row.zone_code,
-      zone_name: row.zone_name,
+      rack_id: row.rack_id,
       rack_code: row.rack_code,
-      shelf_number: row.shelf_number,
+      rack_label: row.rack_label,
+      row_number: row.row_number,
+      column_number: row.column_number,
       available_capacity: row.available_capacity,
       reason: reasons.join('. '),
       score: 100 - idx * 20,
@@ -353,13 +365,11 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
   // Current location
   const locationResult = await pool.query(`
     SELECT sa.id AS assignment_id, sa.unit_code, sa.parent_unit_code, sa.checked_in_at, sa.checked_in_by, sa.quantity,
-      ss.id AS shelf_slot_id, ss.shelf_number,
-      r.code AS rack_code,
-      z.name AS zone_name, z.code AS zone_code
+      ss.id AS shelf_slot_id, ss.row_number, ss.column_number,
+      r.id AS rack_id, r.code AS rack_code, r.label AS rack_label
     FROM storage_assignments sa
     JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
     JOIN racks r ON ss.rack_id = r.id
-    JOIN zones z ON r.zone_id = z.id
     WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
     ORDER BY sa.checked_in_at DESC
     LIMIT 1
@@ -388,10 +398,11 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
         sa.checked_in_by AS assigned_by,
         NULL::text AS status,
         ss.id AS shelf_slot_id,
-        z.name AS zone_name,
-        z.code AS zone_code,
+        r.id AS rack_id,
         r.code AS rack_code,
-        ss.shelf_number,
+        r.label AS rack_label,
+        ss.row_number,
+        ss.column_number,
         NULL::uuid AS machine_id,
         NULL::text AS machine_code,
         NULL::text AS machine_name,
@@ -399,7 +410,6 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
       FROM storage_assignments sa
       JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
       JOIN racks r ON ss.rack_id = r.id
-      JOIN zones z ON r.zone_id = z.id
       WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
 
       UNION ALL
@@ -414,10 +424,11 @@ itemsRouter.get('/:id', asyncHandler(async (req, res) => {
         ma.assigned_by AS assigned_by,
         ma.status,
         NULL::uuid AS shelf_slot_id,
-        NULL::text AS zone_name,
-        NULL::text AS zone_code,
+        NULL::uuid AS rack_id,
         NULL::text AS rack_code,
-        NULL::integer AS shelf_number,
+        NULL::text AS rack_label,
+        NULL::integer AS row_number,
+        NULL::integer AS column_number,
         ma.machine_id,
         m.code AS machine_code,
         m.name AS machine_name,
@@ -538,18 +549,17 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
 
     // Check for duplicates in storage
     const dupResult = await client.query(`
-      SELECT sa.id, z.name AS zone_name, r.code AS rack_code, ss.shelf_number, sa.quantity, sa.checked_in_at
+      SELECT sa.id, r.id AS rack_id, r.code AS rack_code, r.label AS rack_label, ss.row_number, ss.column_number, sa.quantity, sa.checked_in_at
       FROM storage_assignments sa
       JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
       JOIN racks r ON ss.rack_id = r.id
-      JOIN zones z ON r.zone_id = z.id
       WHERE sa.item_id = $1 AND sa.checked_out_at IS NULL
     `, [item_id]);
 
     let warning: string | undefined;
     if (dupResult.rows.length > 0) {
       const locs = dupResult.rows.map((r: Record<string, unknown>) =>
-        `${r.zone_name} > ${r.rack_code} > Shelf ${r.shelf_number}`
+        buildRackCellLabel(r.rack_code as string, r.row_number as number, r.column_number as number)
       ).join(', ');
       warning = `This item already exists in storage at: ${locs}`;
     }
@@ -587,14 +597,13 @@ itemsRouter.post('/check-in', asyncHandler(async (req, res) => {
 
     // Get location string for activity log
     const locResult = await client.query(`
-      SELECT z.code AS zone_code, r.code AS rack_code, ss.shelf_number
+      SELECT r.code AS rack_code, ss.row_number, ss.column_number
       FROM shelf_slots ss
       JOIN racks r ON ss.rack_id = r.id
-      JOIN zones z ON r.zone_id = z.id
       WHERE ss.id = $1
     `, [shelf_slot_id]);
     const loc = locResult.rows[0];
-    const locationStr = `${loc.zone_code}/${loc.rack_code.replace(/^[A-Z]-/, '')}/S${loc.shelf_number}`;
+    const locationStr = buildRackLocationCode(loc.rack_code as string, loc.row_number as number, loc.column_number as number);
 
     // Log activity
     await client.query(
@@ -660,11 +669,10 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
       );
     } else {
       const assignmentResult = await client.query(`
-        SELECT sa.*, ss.id AS slot_id, z.code AS zone_code, r.code AS rack_code, ss.shelf_number, i.item_code
+        SELECT sa.*, ss.id AS slot_id, r.code AS rack_code, ss.row_number, ss.column_number, i.item_code
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
-        JOIN zones z ON r.zone_id = z.id
         JOIN items i ON sa.item_id = i.id
         WHERE sa.id = $1 AND sa.checked_out_at IS NULL
         FOR UPDATE OF sa, ss
@@ -677,7 +685,7 @@ itemsRouter.post('/check-out', asyncHandler(async (req, res) => {
       }
 
       assignment = assignmentResult.rows[0];
-      locationStr = `${assignment.zone_code}/${(assignment.rack_code as string).replace(/^[A-Z]-/, '')}/S${assignment.shelf_number}`;
+      locationStr = buildRackLocationCode(assignment.rack_code as string, assignment.row_number as number, assignment.column_number as number);
 
       await client.query(
         `UPDATE storage_assignments SET checked_out_at = NOW(), checked_out_by = $1, notes = COALESCE($2, notes) WHERE id = $3`,
@@ -756,11 +764,10 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
     } else {
       // Source is a shelf assignment
       const saResult = await client.query(`
-        SELECT sa.*, ss.id AS old_slot_id, z.code AS old_zone_code, r.code AS old_rack_code, ss.shelf_number AS old_shelf_number, i.item_code
+        SELECT sa.*, ss.id AS old_slot_id, r.code AS old_rack_code, ss.row_number AS old_row_number, ss.column_number AS old_column_number, i.item_code
         FROM storage_assignments sa
         JOIN shelf_slots ss ON sa.shelf_slot_id = ss.id
         JOIN racks r ON ss.rack_id = r.id
-        JOIN zones z ON r.zone_id = z.id
         JOIN items i ON sa.item_id = i.id
         WHERE sa.id = $1 AND sa.checked_out_at IS NULL
         FOR UPDATE OF sa, ss
@@ -775,7 +782,7 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       assignment = saResult.rows[0];
       itemId = assignment.item_id as string;
       totalQty = assignment.quantity as number;
-      fromStr = `${assignment.old_zone_code}/${(assignment.old_rack_code as string).replace(/^[A-Z]-/, '')}/S${assignment.old_shelf_number}`;
+      fromStr = buildRackLocationCode(assignment.old_rack_code as string, assignment.old_row_number as number, assignment.old_column_number as number);
     }
 
     let moveQty: number;
@@ -848,12 +855,12 @@ itemsRouter.post('/move', asyncHandler(async (req, res) => {
       }
 
       const newLocResult = await client.query(`
-        SELECT z.code AS zone_code, r.code AS rack_code, ss.shelf_number
-        FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id JOIN zones z ON r.zone_id = z.id
+        SELECT r.code AS rack_code, ss.row_number, ss.column_number
+        FROM shelf_slots ss JOIN racks r ON ss.rack_id = r.id
         WHERE ss.id = $1
       `, [to_shelf_slot_id]);
       const newLoc = newLocResult.rows[0];
-      toStr = `${newLoc.zone_code}/${newLoc.rack_code.replace(/^[A-Z]-/, '')}/S${newLoc.shelf_number}`;
+      toStr = buildRackLocationCode(newLoc.rack_code as string, newLoc.row_number as number, newLoc.column_number as number);
 
       // Reduce/remove source
       if (source_type === 'machine') {

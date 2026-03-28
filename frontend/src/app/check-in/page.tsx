@@ -15,7 +15,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
-import type { CreateItemRequest, Customer, DuplicateWarning, ItemWithLocation, LocationSuggestion, ZoneWithStats } from '@shared/types';
+import type { CreateItemRequest, Customer, DuplicateWarning, ItemWithLocation, LocationSuggestion, RackWithShelves, RackWithStats } from '@shared/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -24,7 +24,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { LocationBadge } from '@/components/ui/LocationBadge';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
-import { api, type ZoneDetail } from '@/lib/api';
+import { api } from '@/lib/api';
 
 type FlowState = 'lookup' | 'duplicate' | 'details' | 'location' | 'confirm' | 'success';
 
@@ -44,9 +44,9 @@ export default function CheckInPage() {
   const [duplicate, setDuplicate] = useState<DuplicateWarning | null>(null);
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [zones, setZones] = useState<ZoneWithStats[]>([]);
-  const [zoneDetail, setZoneDetail] = useState<ZoneDetail | null>(null);
-  const [selectedZoneId, setSelectedZoneId] = useState('');
+  const [racks, setRacks] = useState<RackWithStats[]>([]);
+  const [rackDetail, setRackDetail] = useState<RackWithShelves | null>(null);
+  const [selectedRackId, setSelectedRackId] = useState('');
   const [selectedShelfSlotId, setSelectedShelfSlotId] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [notes, setNotes] = useState('');
@@ -55,50 +55,41 @@ export default function CheckInPage() {
   const [resultUnitCode, setResultUnitCode] = useState('');
   const [warning, setWarning] = useState('');
   const [loading, setLoading] = useState(false);
-  const [preselectedZoneId, setPreselectedZoneId] = useState('');
   const [preselectedRackId, setPreselectedRackId] = useState('');
-  const [preselectedShelfSlotId, setPreselectedShelfSlotId] = useState('');
+  const [preselectedCellId, setPreselectedCellId] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setPreselectedZoneId(params.get('zone') || '');
     setPreselectedRackId(params.get('rack') || '');
-    setPreselectedShelfSlotId(params.get('shelf') || '');
+    setPreselectedCellId(params.get('cell') || params.get('shelf') || '');
   }, []);
 
   useEffect(() => {
-    void Promise.all([api.getCustomers(), api.getZones()]).then(([c, z]) => { setCustomers(c.data); setZones(z.data); });
+    void Promise.all([api.getCustomers(), api.getRacks()]).then(([c, r]) => { setCustomers(c.data); setRacks(r.data); });
   }, []);
 
   useEffect(() => {
-    if (!selectedZoneId) { setZoneDetail(null); return; }
-    void api.getZone(selectedZoneId).then((r) => setZoneDetail(r.data));
-  }, [selectedZoneId]);
+    if (!selectedRackId) { setRackDetail(null); return; }
+    void api.getRack(selectedRackId).then((r) => setRackDetail(r.data));
+  }, [selectedRackId]);
 
   useEffect(() => {
-    if (preselectedZoneId) setSelectedZoneId(preselectedZoneId);
-    if (preselectedShelfSlotId) setSelectedShelfSlotId(preselectedShelfSlotId);
-  }, [preselectedShelfSlotId, preselectedZoneId]);
-
-  useEffect(() => {
-    if (preselectedZoneId || !preselectedRackId) return;
-    void api.getRack(preselectedRackId).then((r) => setSelectedZoneId(r.data.zone_id));
-  }, [preselectedRackId, preselectedZoneId]);
+    if (preselectedRackId) setSelectedRackId(preselectedRackId);
+    if (preselectedCellId) setSelectedShelfSlotId(preselectedCellId);
+  }, [preselectedCellId, preselectedRackId]);
 
   const manualShelfOptions = useMemo(
-    () => zoneDetail?.racks.flatMap((rack) =>
-      rack.shelves
-        .filter(() => (preselectedRackId ? rack.id === preselectedRackId : true))
-        .filter((shelf) => shelf.current_count < shelf.capacity)
-        .map((shelf) => ({ value: shelf.id, label: `${rack.code} > Shelf ${shelf.shelf_number} (${shelf.capacity - shelf.current_count} free)` })),
-    ) || [],
-    [preselectedRackId, zoneDetail],
+    () =>
+      rackDetail?.shelves
+        .filter((cell) => cell.current_count < cell.capacity)
+        .map((cell) => ({ value: cell.id, label: `${rackDetail.code} / R${cell.row_number} / C${cell.column_number} (${cell.capacity - cell.current_count} free)` })) || [],
+    [rackDetail],
   );
 
   const selectedLocationLabel = useMemo(() => {
     const s = suggestions.find((x) => x.shelf_slot_id === selectedShelfSlotId);
-    if (s) return `${s.zone_code} > ${s.rack_code} > Shelf ${s.shelf_number}`;
-    return manualShelfOptions.find((o) => o.value === selectedShelfSlotId)?.label || 'Select a shelf';
+    if (s) return `${s.rack_code} / R${s.row_number} / C${s.column_number}`;
+    return manualShelfOptions.find((o) => o.value === selectedShelfSlotId)?.label || 'Select a cell';
   }, [manualShelfOptions, selectedShelfSlotId, suggestions]);
 
   async function handleLookup() {
@@ -175,8 +166,8 @@ export default function CheckInPage() {
             <Box flex={1}><Input label="Item code" value={lookupCode} onChange={(e: any) => setLookupCode(e.target.value)} placeholder="KONE-001-PANEL-A" /></Box>
             <Button onClick={handleLookup} disabled={loading}>{loading ? 'Looking up...' : 'Look up'}</Button>
           </Stack>
-          {(preselectedZoneId || preselectedRackId || preselectedShelfSlotId) ? (
-            <Typography variant="caption" color="text.secondary" mt={1} display="block">Map context is active. Zone or rack was prefilled from the storage grid.</Typography>
+          {(preselectedRackId || preselectedCellId) ? (
+            <Typography variant="caption" color="text.secondary" mt={1} display="block">Grid context is active. Rack or cell was prefilled from the storage grid.</Typography>
           ) : null}
         </CardContent>
       </Card>
@@ -193,7 +184,7 @@ export default function CheckInPage() {
               <Grid size={{ xs: 12, md: 6 }} key={i}>
                 <Paper variant="outlined" sx={{ p: 1.5 }}>
                   <Typography variant="caption" color="text.secondary">Copy {i + 1}</Typography>
-                  <Typography variant="body2">{`${loc.zone_name} > ${loc.rack_code} > Shelf ${loc.shelf_number}`}</Typography>
+                  <Typography variant="body2">{`${loc.rack_code} / R${loc.row_number} / C${loc.column_number}`}</Typography>
                   <Typography variant="caption" color="text.secondary">{loc.quantity} units</Typography>
                 </Paper>
               </Grid>
@@ -264,20 +255,20 @@ export default function CheckInPage() {
                         onClick={() => { setSelectedShelfSlotId(s.shelf_slot_id); setFlow('confirm'); }}
                         sx={{ p: 2, cursor: 'pointer', borderColor: selectedShelfSlotId === s.shelf_slot_id ? 'primary.main' : 'divider', bgcolor: selectedShelfSlotId === s.shelf_slot_id ? 'primary.50' : 'background.paper', '&:hover': { borderColor: 'primary.light' } }}
                       >
-                        <Typography variant="body2" fontFamily="monospace">{`${s.zone_code} > ${s.rack_code} > Shelf ${s.shelf_number}`}</Typography>
+                        <Typography variant="body2" fontFamily="monospace">{`${s.rack_code} / R${s.row_number} / C${s.column_number}`}</Typography>
                         <Typography variant="caption" color="text.secondary">{s.reason}</Typography>
                       </Paper>
                     ))}
                   </Stack>
                 ) : (
-                  <EmptyState title="No smart suggestions" description="Pick a shelf manually." />
+                  <EmptyState title="No smart suggestions" description="Pick a cell manually." />
                 )}
               </Grid>
               <Grid size={{ xs: 12, lg: 4 }}>
                 <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50' }}>
                   <Stack spacing={2}>
-                    <Select label="Zone" value={selectedZoneId} onChange={(e: any) => setSelectedZoneId(e.target.value)} options={[{ label: 'Select zone', value: '' }, ...zones.map((z) => ({ label: `${z.code} - ${z.name}`, value: z.id }))]} />
-                    <Select label="Shelf" value={selectedShelfSlotId} onChange={(e: any) => { setSelectedShelfSlotId(e.target.value); if (e.target.value) setFlow('confirm'); }} options={[{ label: 'Select shelf', value: '' }, ...manualShelfOptions]} />
+                    <Select label="Rack" value={selectedRackId} onChange={(e: any) => setSelectedRackId(e.target.value)} options={[{ label: 'Select rack', value: '' }, ...racks.map((rack) => ({ label: `${rack.code} - ${rack.label}`, value: rack.id }))]} />
+                    <Select label="Cell" value={selectedShelfSlotId} onChange={(e: any) => { setSelectedShelfSlotId(e.target.value); if (e.target.value) setFlow('confirm'); }} options={[{ label: 'Select cell', value: '' }, ...manualShelfOptions]} />
                   </Stack>
                 </Paper>
               </Grid>

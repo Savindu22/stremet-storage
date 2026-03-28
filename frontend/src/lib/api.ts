@@ -16,38 +16,12 @@ import type {
   LocationSuggestion,
   MachineWithItemCount,
   MoveRequest,
+  RackWithStats,
   RackWithShelves,
   UpdateItemRequest,
   WarehouseStats,
-  ZoneWithStats,
 } from '@shared/types';
 import { buildQueryString } from '@/lib/utils';
-
-type ZoneDetail = ZoneWithStats & {
-  racks: Array<{
-    id: string;
-    code: string;
-    label: string;
-    total_shelves: number;
-    shelves: Array<{
-      id: string;
-      shelf_number: number;
-      capacity: number;
-      current_count: number;
-      items?: Array<{
-        assignment_id: string;
-        item_id: string;
-        item_code: string;
-        unit_code: string;
-        item_name: string;
-        customer_name: string | null;
-        quantity: number;
-        checked_in_at: string;
-        checked_in_by: string;
-      }>;
-    }>;
-  }>;
-};
 
 type CheckInResult = { assignment_id: string; unit_code: string; quantity: number; location: string };
 type CheckOutResult = { assignment_id: string; location: string; item_code: string; unit_code: string };
@@ -130,9 +104,7 @@ export const api = {
   getActivity: (filters: ActivityFilters = {}) =>
     request<ApiListResponse<ActivityLogWithItem>>(`/activity?${buildQueryString(filters)}`),
 
-  getZones: () => request<ApiResponse<ZoneWithStats[]>>('/zones'),
-
-  getZone: (id: string) => request<ApiResponse<ZoneDetail>>(`/zones/${id}`),
+  getRacks: () => request<ApiResponse<RackWithStats[]>>('/racks'),
 
   getRack: (id: string) => request<ApiResponse<RackWithShelves>>(`/racks/${id}`),
 
@@ -152,5 +124,3 @@ export const api = {
 
   globalSearch: (query: string) => request<ApiResponse<GlobalSearchResponse>>(`/search?q=${encodeURIComponent(query)}`),
 };
-
-export type { ZoneDetail };

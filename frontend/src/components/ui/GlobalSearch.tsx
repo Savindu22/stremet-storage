@@ -36,7 +36,7 @@ export function GlobalSearch() {
     for (const item of results.items) flatResults.push({ href: `/items/${item.id}`, label: item.item_code });
     for (const m of results.machines) flatResults.push({ href: `/machines/${m.id}`, label: m.code });
     for (const c of results.customers) flatResults.push({ href: `/items?search=${encodeURIComponent(c.name)}`, label: c.name });
-    for (const loc of results.locations) flatResults.push({ href: `/zones/${loc.zone_id}`, label: loc.rack_code });
+    for (const loc of results.locations) flatResults.push({ href: `/racks/${loc.rack_id}`, label: loc.rack_code });
   }
 
   const navigate = useCallback((href: string) => {
@@ -249,15 +249,15 @@ export function GlobalSearch() {
                   <Box>
                     <Divider />
                     <Box px={2} pt={1.5} pb={0.5}>
-                      <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>Locations</Typography>
+                      <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>Racks</Typography>
                     </Box>
                     {results.locations.map((loc) => {
                       flatIndex++;
                       const idx = flatIndex;
                       return (
                         <Box
-                          key={`${loc.zone_id}-${loc.rack_id}`}
-                          onClick={() => navigate(`/zones/${loc.zone_id}`)}
+                          key={loc.rack_id}
+                          onClick={() => navigate(`/racks/${loc.rack_id}`)}
                           sx={{
                             px: 2, py: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.5,
                             bgcolor: selectedIndex === idx ? 'action.hover' : 'transparent',
@@ -267,7 +267,7 @@ export function GlobalSearch() {
                           <PlaceIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />
                           <Box flex={1} minWidth={0}>
                             <Typography variant="body2" fontWeight={600} noWrap>{loc.rack_code}</Typography>
-                            <Typography variant="caption" color="text.secondary" noWrap>{loc.zone_name}</Typography>
+                            <Typography variant="caption" color="text.secondary" noWrap>{loc.rack_label}</Typography>
                           </Box>
                           <Typography variant="caption" color="text.secondary" flexShrink={0}>{loc.items_stored} items</Typography>
                         </Box>
