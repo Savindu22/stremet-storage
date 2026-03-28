@@ -62,9 +62,6 @@ export function GridView({ racks }: GridViewProps) {
           sx={{ cursor: 'pointer' }}
         >
           <OccupancyBar used={cell.current_volume_m3} total={cell.max_volume_m3} compact />
-          <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontSize: '0.65rem', color: 'text.secondary' }}>
-            {cell.current_count} items
-          </Typography>
         </Box>
         <Collapse in={expanded}>
           <Stack spacing={0.5} mt={1}>
@@ -75,7 +72,7 @@ export function GridView({ racks }: GridViewProps) {
                 <Link key={item.id} href={item.item_href} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
                   <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 0.5, '&:hover': { bgcolor: 'action.hover' } }}>
                     <Typography variant="body2" fontWeight={700} color="primary" sx={{ fontSize: '0.75rem' }}>{item.item_code}</Typography>
-                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>{item.quantity} pcs · {item.volume_m3?.toFixed(2)} m³</Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>{item.volume_m3?.toFixed(2)} m³</Typography>
                   </Box>
                 </Link>
               ))

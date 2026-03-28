@@ -324,14 +324,14 @@ export interface GlobalSearchLocation {
   rack_code: string;
   rack_label: string;
   rack_type: RackType;
-  items_stored: number;
+  volume_stored: number;
 }
 
 export interface GlobalSearchCustomer {
   id: string;
   name: string;
   code: string;
-  items_in_storage: number;
+  volume_in_storage: number;
 }
 
 export interface GlobalSearchMachine {
@@ -339,7 +339,7 @@ export interface GlobalSearchMachine {
   name: string;
   code: string;
   category: MachineCategory | string;
-  active_items: number;
+  active_volume: number;
 }
 
 export interface GlobalSearchResponse {
@@ -352,8 +352,8 @@ export interface GlobalSearchResponse {
 export interface WarehouseStats {
   total_racks: number;
   total_slots: number;
-  total_capacity: number;
-  items_stored: number;
+  total_capacity: number; // Volume m3
+  volume_stored: number; // Volume m3
   slots_in_use: number;
   occupancy_percent: number;
   racks: RackWithStats[];
@@ -397,55 +397,6 @@ export interface CreateItemRequest {
   type: ItemType;
   order_number?: string;
   quantity: number;
-}
-
-// --- Assistant ---
-
-export type ActionProposal =
-  | {
-      action: 'check_in';
-      item_id: string;
-      item_code: string;
-      shelf_slot_id: string;
-      location: string;
-      quantity: number;
-      notes?: string;
-    }
-  | {
-      action: 'check_out';
-      assignment_id: string;
-      unit_code: string;
-      source_type: 'shelf' | 'machine';
-      location: string;
-      item_code: string;
-      notes?: string;
-    }
-  | {
-      action: 'move';
-      assignment_id: string;
-      unit_code: string;
-      source_type: 'shelf' | 'machine';
-      from: string;
-      to: string;
-      to_shelf_slot_id?: string;
-      to_machine_id?: string;
-      quantity?: number;
-      notes?: string;
-    };
-
-export interface AssistantRequest {
-  message: string;
-  imageBase64?: string;
-  history: { role: 'user' | 'assistant'; content: string }[];
-  workerName?: string;
-}
-
-export interface AssistantResponse {
-  message: string;
-  sql?: string;
-  data?: Record<string, unknown>[];
-  rowCount?: number;
-  action?: ActionProposal;
 }
 
 export interface UpdateItemRequest {
