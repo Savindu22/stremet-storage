@@ -54,7 +54,7 @@ export function GridView({ racks }: GridViewProps) {
 
   function renderCell(cell: MapCell) {
     const expanded = expandedCellId === cell.id;
-    const palette = getOccupancyPalette(cell.current_count, cell.capacity);
+    const palette = getOccupancyPalette(cell.current_volume_m3, cell.max_volume_m3);
 
     return (
       <TableCell key={cell.id} sx={{ verticalAlign: 'top', bgcolor: 'background.paper', p: 1 }}>

@@ -33,6 +33,7 @@ export interface MapRack {
   column_count: number;
   occupancy_used: number;
   occupancy_total: number;
+  cells_in_use: number;
   cells: MapCell[];
 }
 

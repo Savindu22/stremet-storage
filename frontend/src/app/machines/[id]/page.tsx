@@ -220,6 +220,21 @@ export default function MachineDetailPage() {
     setMoveWorkerName('');
     setMoveNotes('');
     setMoveOpen(true);
+
+    // Auto-suggest optimal storage location
+    void api.suggestLocation(item.item_id).then((res) => {
+      if (res.data && res.data.length > 0) {
+        const best = res.data[0];
+        setMoveRackId(best.rack_id);
+        
+        // Fetch rack detail to populate the cell dropdown, then select the cell
+        void api.getRack(best.rack_id).then((rackRes) => {
+          setMoveRackDetail(rackRes.data);
+          setMoveShelfSlotId(best.shelf_slot_id);
+          showToast(`Optimizer: Pre-selected ${best.location}`);
+        });
+      }
+    });
   }
 
   function openStatusDialog(item: MachineDetailItem, statusOverride?: string) {
