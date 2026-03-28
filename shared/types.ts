@@ -443,6 +443,39 @@ export interface AssistantResponse {
   action?: ActionProposal;
 }
 
+// --- Unit Lookup (QR scan) ---
+
+export interface UnitLookupResult {
+  source_type: 'shelf' | 'machine';
+  assignment_id: string;
+  unit_code: string;
+  quantity: number;
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  material: string;
+  weight_kg: number;
+  customer_name: string | null;
+  customer_code: string | null;
+  location: string;
+  // Shelf-specific
+  rack_id?: string;
+  rack_code?: string;
+  shelf_slot_id?: string;
+  row_number?: number;
+  column_number?: number;
+  checked_in_at?: string;
+  checked_in_by?: string;
+  // Machine-specific
+  machine_id?: string;
+  machine_code?: string;
+  machine_name?: string;
+  machine_category?: MachineCategory;
+  status?: MachineAssignmentStatus;
+  assigned_at?: string;
+  assigned_by?: string;
+}
+
 export interface UpdateItemRequest {
   name?: string;
   description?: string;

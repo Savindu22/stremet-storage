@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from './pool';
 import { buildTrackingUnitCode } from '../lib/trackingUnits';
-import { getDefaultMachineAssignmentStatus, type MachineAssignmentStatus } from '../lib/machineAssignmentStatus';
 import { RackType } from '@shared/types';
 
 // --- Helpers ---
@@ -14,12 +13,6 @@ function randomChoice<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function randomDate(daysAgo: number): Date {
-  const now = new Date();
-  const past = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-  return new Date(past.getTime() + Math.random() * (now.getTime() - past.getTime()));
-}
-
 // --- Static Data ---
 
 const CUSTOMERS = [
@@ -28,13 +21,6 @@ const CUSTOMERS = [
   { name: 'Valmet Oyj', code: 'VALM', email: 'supply@valmet.com' },
   { name: 'Ponsse Oyj', code: 'PONS', email: 'parts@ponsse.com' },
   { name: 'Cargotec Oyj', code: 'CARG', email: 'logistics@cargotec.com' },
-];
-
-const MATERIALS = [
-  'Stainless steel 1.5mm',
-  'Stainless steel 2.0mm',
-  'Cold-rolled steel 1.0mm',
-  'Aluminum 5052 2.0mm',
 ];
 
 const PART_TYPES = ['Panel', 'Bracket', 'Housing', 'Cover', 'Frame'];
@@ -47,8 +33,6 @@ const MACHINES = [
 ];
 
 const WORKERS = ['Matti Virtanen', 'Juha Korhonen', 'Mikko Nieminen'];
-
-const MACHINE_ASSIGNMENT_STATUSES: MachineAssignmentStatus[] = ['queued', 'processing', 'needs_attention', 'ready_for_storage'];
 
 async function seed(): Promise<void> {
   const client = await pool.connect();
